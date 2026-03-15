@@ -35,6 +35,7 @@ export const assetApi = {
   delete:      (id) => api.delete(`/assets/${id}`),
   uploadImage: (id, fd) => api.post(`/assets/${id}/upload-image`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }),
   uploadDoc:   (fd)     => api.post('/assets/upload-doc', fd, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  duplicate:   (id) => api.post(`/assets/${id}/duplicate`),
   getQrImage:  (id) => api.get(`/assets/${id}/qr-image`, { responseType: 'blob' }),
   getLifecycle: (id) => api.get(`/assets/${id}/lifecycle`),
   alerts:      () => api.get('/assets/alerts'),
@@ -83,8 +84,10 @@ export const dashboardApi = {
 
 // ── Supporting resources ────────────────────────────────────
 export const locationApi  = {
-  list:   ()     => api.get('/locations'),
-  create: (data) => api.post('/locations', data),
+  list:   ()         => api.get('/locations'),
+  create: (data)     => api.post('/locations', data),
+  update: (id, data) => api.put(`/locations/${id}`, data),
+  delete: (id)       => api.delete(`/locations/${id}`),
 }
 export const personnelApi = { list: () => api.get('/personnel') }
 

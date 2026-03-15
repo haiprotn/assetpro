@@ -20,7 +20,14 @@
       "Bash(docker exec asset_backend ls //app/uploads/assets)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:8001/uploads/assets/ATOMAT1.jpg\")",
       "Bash(find e:/Phanmemquanlytaisan/github/assetpro/backend -name *.sql -o -name alembic*)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(grep -r \"LocationPage\\\\|location.*page\\\\|管理.*位置\" /e/Phanmemquanlytaisan/github/assetpro/frontend/src/pages/*.jsx)",
+      "Bash(grep -r \"location\\\\|Location\" /e/Phanmemquanlytaisan/github/assetpro/frontend/src/pages/*.jsx)",
+      "Bash(grep -r \"supplier\\\\|Supplier\" /e/Phanmemquanlytaisan/github/assetpro/frontend/src/pages/*.jsx)",
+      "Bash(grep -r \"locationApi\\\\|supplerApi\" /e/Phanmemquanlytaisan/github/assetpro/frontend/src/pages/*.jsx)",
+      "Bash(grep -n \"duplicate\\\\|clone\\\\|copy\" /e/Phanmemquanlytaisan/github/assetpro/backend/app/api/v1/endpoints/*.py)",
+      "Bash(grep -r \"bien_so\\\\|license\\\\|plate\\\\|đăng_kiểm\\\\|registration\" /e/Phanmemquanlytaisan/github/assetpro/frontend/src/pages/*.jsx)",
+      "Bash(grep -r \"bien.so\\\\|biển\\\\|plate\" /e/Phanmemquanlytaisan/github/assetpro/frontend/src/pages/*.jsx)"
     ]
   }
 }

@@ -14,6 +14,7 @@ import LifecyclePage from './pages/LifecyclePage'
 import ConfigPage from './pages/ConfigPage'
 import DepartmentsPage from './pages/DepartmentsPage'
 import AssetTypesPage from './pages/AssetTypesPage'
+import LocationPage from './pages/LocationPage'
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useAuthStore()
@@ -36,6 +37,7 @@ export default function App() {
         <Route path="transfers/:id"      element={<TransferDetailPage />} />
         <Route path="maintenance"        element={<MaintenancePage />} />
         <Route path="lifecycle"          element={<LifecyclePage />} />
+        <Route path="locations"          element={<LocationPage />} />
         <Route path="departments"        element={<DepartmentsPage />} />
         <Route path="asset-types"        element={<AssetTypesPage />} />
         <Route path="config"             element={<ConfigPage />} />

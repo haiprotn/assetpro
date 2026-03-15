@@ -123,6 +123,15 @@ async def get_asset_by_code(
     return asset
 
 
+@router.post("/{asset_id}/duplicate", response_model=AssetOut, status_code=201)
+async def duplicate_asset(
+    asset_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    return await AssetService.duplicate_asset(db, asset_id, created_by=current_user.id)
+
+
 @router.put("/{asset_id}", response_model=AssetOut)
 async def update_asset(
     asset_id: uuid.UUID,

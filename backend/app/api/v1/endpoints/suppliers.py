@@ -17,13 +17,28 @@ async def list_suppliers(db=Depends(get_db), current_user=Depends(get_current_us
 
 @router.post("", status_code=201)
 async def create_supplier(data: dict, db=Depends(get_db), current_user=Depends(get_current_user)):
+    import re, unicodedata
+    def _to_code(name):
+        nfkd = unicodedata.normalize('NFKD', str(name))
+        return re.sub(r'[^A-Z0-9]+', '_', nfkd.encode('ascii', 'ignore').decode().upper()).strip('_')[:50]
+    raw_code = data.get("code", "").strip().upper()
+    if not raw_code:
+        raw_code = _to_code(data.get("name", "NCC"))
+    # Ensure uniqueness
+    base = raw_code
+    code = base
+    for i in range(1, 100):
+        exists = (await db.execute(text("SELECT 1 FROM suppliers WHERE code=:c"), {"c": code})).fetchone()
+        if not exists:
+            break
+        code = f"{base}_{i}"
     sid = uuid.uuid4()
     await db.execute(text("""
         INSERT INTO suppliers (id, code, name, address, phone, email)
         VALUES (:id, :code, :name, :address, :phone, :email)
     """), {
         "id": str(sid),
-        "code": data.get("code", "").upper(),
+        "code": code,
         "name": data.get("name", ""),
         "address": data.get("address"),
         "phone": data.get("phone"),

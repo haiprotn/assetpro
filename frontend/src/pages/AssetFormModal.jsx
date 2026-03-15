@@ -24,7 +24,7 @@ const EMPTY = {
   supplier_id: '', model_series: '', year_manufactured: '', country_manufactured: '',
   purchase_price: '', original_value: '', depreciation_months: '', loan_amount: '',
   purchase_date: '', warranty_end_date: '', expiry_date: '', warranty_months: '',
-  chassis_number: '', engine_number: '', registration_expiry: '',
+  chassis_number: '', engine_number: '', license_plate: '', registration_expiry: '',
   quantity: 1, description: '', condition_description: '', tags: '',
 }
 
@@ -220,6 +220,7 @@ export default function AssetFormModal({ assetId, onClose, onSaved }) {
       warranty_months: toStr(asset.warranty_months),
       chassis_number: toStr(asset.chassis_number),
       engine_number: toStr(asset.engine_number),
+      license_plate: toStr(asset.license_plate),
       registration_expiry: toStr(asset.registration_expiry),
       quantity: asset.quantity ?? 1,
       description: toStr(asset.description),
@@ -263,7 +264,7 @@ export default function AssetFormModal({ assetId, onClose, onSaved }) {
     const dateFields = ['purchase_date', 'warranty_end_date', 'expiry_date', 'registration_expiry']
     const uuidFields = ['asset_type_id', 'managing_department_id', 'current_location_id', 'supplier_id']
     const strFields = ['asset_code', 'name', 'barcode', 'status', 'model_series', 'year_manufactured',
-      'country_manufactured', 'chassis_number', 'engine_number', 'description', 'condition_description']
+      'country_manufactured', 'chassis_number', 'engine_number', 'license_plate', 'description', 'condition_description']
 
     strFields.forEach(k => { if (form[k] !== '') p[k] = form[k] || null })
     numFields.forEach(k => { if (form[k] !== '') p[k] = Number(form[k]) || null })
@@ -670,6 +671,11 @@ export default function AssetFormModal({ assetId, onClose, onSaved }) {
 
             {/* Vehicle */}
             <Section title="🚗 Xe / Máy (tuỳ chọn)">
+              <div>
+                <Field label="Biển số xe">
+                  <input value={form.license_plate} onChange={e => set('license_plate', e.target.value)} style={inp} placeholder="VD: 51A-12345" />
+                </Field>
+              </div>
               <div>
                 <Field label="Số khung">
                   <input value={form.chassis_number} onChange={e => set('chassis_number', e.target.value)} style={inp} />

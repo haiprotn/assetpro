@@ -9,6 +9,7 @@ const NAV = [
   { to: '/maintenance', icon: '🔧', label: 'Bảo trì' },
   { to: '/lifecycle',   icon: '📜', label: 'Lịch sử' },
   { separator: true },
+  { to: '/locations',   icon: '📍', label: 'Vị trí' },
   { to: '/departments', icon: '🏢', label: 'Phòng ban' },
   { to: '/asset-types', icon: '🏷️', label: 'Loại tài sản' },
   { to: '/config',      icon: '⚙️', label: 'Cấu hình' },

@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
-import { assetApi, assetTypeApi, assetTypeGroupApi } from '../services/api'
+import { assetApi, assetTypeApi, assetTypeGroupApi, locationApi } from '../services/api'
 import { Card, PageHeader, StatusBadge, Btn, fmtVnd, DynAttrBadges, Spinner } from '../components/ui'
 import AssetFormModal from './AssetFormModal'
 
@@ -38,8 +38,10 @@ const TABLE_COLUMNS = [
   { key: 'model_series', label: 'Model/Series',      def: false },
   { key: 'so_luong',     label: 'Số lượng',          def: false },
   { key: 'han_dk',       label: 'Hạn đăng kiểm',    def: false },
+  { key: 'nha_cung_cap', label: 'Nhà cung cấp',     def: false },
   { key: 'so_khung',     label: 'Số Khung',          def: false },
   { key: 'so_dong_co',   label: 'Số Động cơ',        def: false },
+  { key: 'license_plate',label: 'Biển số xe',        def: false },
   { key: 'ngay_mua',     label: 'Ngày mua',          def: false, sort: 'purchase_date' },
 ]
 
@@ -84,6 +86,7 @@ const EXPORT_COLUMNS = [
   { key: 'dien_thoai_ncc',       label: 'Điện thoại NCC',         group: 'Nhà cung cấp' },
   { key: 'so_khung',             label: 'Số Khung',               group: 'Xe / Máy' },
   { key: 'so_dong_co',           label: 'Số Động cơ',             group: 'Xe / Máy' },
+  { key: 'bien_so',              label: 'Biển số xe',             group: 'Xe / Máy' },
   { key: 'nam_nuoc_sx',          label: 'Năm - Nước sản xuất',    group: 'Xe / Máy' },
   { key: 'thue_bao',             label: 'Thuê bao',               group: 'Khác' },
   { key: 'thong_so_thiet_bi',    label: 'Thông số thiết bị',      group: 'Khác' },
@@ -95,6 +98,15 @@ const DEFAULT_EXPORT_KEYS = [
   'vi_tri', 'phong_ban', 'nguyen_gia', 'ngay_mua', 'model_series',
   'so_khung', 'so_dong_co', 'nha_cung_cap',
 ]
+
+const TABLE_COL_TO_EXPORT_KEY = {
+  anh: 'anh_tai_san', ma_ts: 'ma_ts', barcode: 'barcode', ten_ts: 'ten_ts',
+  loai_ts: 'loai_ts', trang_thai: 'trang_thai', vi_tri: 'vi_tri',
+  phong_ban: 'phong_ban', nguyen_gia: 'nguyen_gia', gia_tri_ht: 'gia_tri_hien_tai',
+  khau_hao: 'gia_tri_khau_hao', model_series: 'model_series', so_luong: 'so_luong',
+  han_dk: 'han_dang_kiem', so_khung: 'so_khung', so_dong_co: 'so_dong_co',
+  license_plate: 'bien_so', nha_cung_cap: 'nha_cung_cap', ngay_mua: 'ngay_mua',
+}
 
 const LS_COLS = 'assets_visible_cols'
 const getInitialCols = () => {
@@ -485,9 +497,14 @@ function ColPicker({ visible, onChange, dynCols = [] }) {
 
 // ── ExportModal ────────────────────────────────────────────────────────────
 
-function ExportModal({ onClose, currentFilters }) {
-  const [selectedCols, setSelectedCols] = useState(DEFAULT_EXPORT_KEYS)
-  const [mode, setMode] = useState('custom')
+function ExportModal({ onClose, currentFilters, visibleCols = [] }) {
+  const visibleExportKeys = visibleCols
+    .map(k => TABLE_COL_TO_EXPORT_KEY[k])
+    .filter(Boolean)
+  const [selectedCols, setSelectedCols] = useState(
+    visibleExportKeys.length > 0 ? visibleExportKeys : DEFAULT_EXPORT_KEYS
+  )
+  const [mode, setMode] = useState(visibleExportKeys.length > 0 ? 'visible' : 'custom')
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
 
@@ -498,7 +515,9 @@ function ExportModal({ onClose, currentFilters }) {
   }
 
   const doExport = async () => {
-    const cols = mode === 'all' ? EXPORT_COLUMNS.map(c => c.key) : selectedCols
+    const cols = mode === 'all' ? EXPORT_COLUMNS.map(c => c.key)
+      : mode === 'visible' ? visibleExportKeys
+      : selectedCols
     if (cols.length === 0) { setError('Vui lòng chọn ít nhất 1 cột'); return }
     setExporting(true); setError('')
     try {
@@ -559,10 +578,11 @@ function ExportModal({ onClose, currentFilters }) {
         </div>
 
         {/* Mode selector */}
-        <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
           {[
-            { v: 'all',    label: '✅ Xuất tất cả cột',       desc: `${EXPORT_COLUMNS.length} cột` },
-            { v: 'custom', label: '⚙️ Chọn cột tùy chỉnh',   desc: `${selectedCols.length} cột đã chọn` },
+            { v: 'visible', label: '👁️ Cột đang hiển thị',   desc: `${visibleExportKeys.length} cột` },
+            { v: 'all',     label: '✅ Xuất tất cả cột',       desc: `${EXPORT_COLUMNS.length} cột` },
+            { v: 'custom',  label: '⚙️ Chọn cột tùy chỉnh',   desc: `${selectedCols.length} cột đã chọn` },
           ].map(({ v, label, desc }) => (
             <div key={v} onClick={() => setMode(v)} style={{
               flex: 1, padding: '12px 16px', borderRadius: 10, cursor: 'pointer',
@@ -736,10 +756,14 @@ function AssetCell({ colKey, asset, onImageClick }) {
       return td(asset.quantity, { textAlign: 'center' })
     case 'han_dk':
       return td(fmtDate(asset.registration_expiry), { fontSize: 12 })
+    case 'nha_cung_cap':
+      return td(asset.supplier_name || '—', { fontSize: 12, color: 'var(--muted)' })
     case 'so_khung':
       return td(asset.chassis_number || '—', { fontSize: 12, fontFamily: 'monospace' })
     case 'so_dong_co':
       return td(asset.engine_number || '—', { fontSize: 12, fontFamily: 'monospace' })
+    case 'license_plate':
+      return td(asset.license_plate || '—', { fontSize: 12, fontFamily: 'monospace', fontWeight: asset.license_plate ? 600 : 400 })
     case 'ngay_mua':
       return td(fmtDate(asset.purchase_date), { fontSize: 12 })
     default:
@@ -769,6 +793,7 @@ export default function AssetsPage() {
   const [formModal, setFormModal] = useState(null) // null | 'new' | assetId
   const [sortBy, setSortBy] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
+  const [locationId, setLocationId] = useState('')
 
   const handleSort = (colSortKey) => {
     if (!colSortKey) return
@@ -782,9 +807,14 @@ export default function AssetsPage() {
   }
 
   const { data, isLoading } = useQuery({
-    queryKey: ['assets', q, status, groupCode, page, sortBy, sortDir],
-    queryFn: () => assetApi.list({ q, status, group_code: groupCode, page, size: 20, sort_by: sortBy || undefined, sort_dir: sortBy ? sortDir : undefined }).then(r => r.data),
+    queryKey: ['assets', q, status, groupCode, locationId, page, sortBy, sortDir],
+    queryFn: () => assetApi.list({ q, status, group_code: groupCode, location_id: locationId || undefined, page, size: 20, sort_by: sortBy || undefined, sort_dir: sortBy ? sortDir : undefined }).then(r => r.data),
     keepPreviousData: true,
+  })
+
+  const { data: locationsList = [] } = useQuery({
+    queryKey: ['locations'],
+    queryFn: () => locationApi.list().then(r => r.data),
   })
 
   const { data: assetTypes } = useQuery({
@@ -817,6 +847,15 @@ export default function AssetsPage() {
     onError: (e) => alert('Lỗi xoá: ' + (e.response?.data?.detail || e.message)),
   })
 
+  const cloneMutation = useMutation({
+    mutationFn: (id) => assetApi.duplicate(id),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries(['assets'])
+      setFormModal(res.data.id)
+    },
+    onError: (e) => alert('Lỗi nhân bản: ' + (e.response?.data?.detail || e.message)),
+  })
+
   const handleDelete = (e, asset) => {
     e.stopPropagation()
     if (window.confirm(`Xoá tài sản "${asset.asset_code} - ${asset.name}"?`)) {
@@ -837,6 +876,7 @@ export default function AssetsPage() {
         <ExportModal
           onClose={() => setShowExport(false)}
           currentFilters={{ status, group_code: groupCode }}
+          visibleCols={visibleCols}
         />
       )}
       {formModal !== null && (
@@ -889,6 +929,13 @@ export default function AssetsPage() {
             <option value="">Tất cả nhóm</option>
             {(assetTypes || []).map(g => (
               <option key={g.code} value={g.code}>{g.name}</option>
+            ))}
+          </select>
+          <select value={locationId} onChange={e => { setLocationId(e.target.value); setPage(1) }}
+            style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, background: 'white' }}>
+            <option value="">Tất cả vị trí</option>
+            {locationsList.map(l => (
+              <option key={l.id} value={l.id}>{l.name}</option>
             ))}
           </select>
           <ColPicker visible={visibleCols} onChange={setVisibleCols} dynCols={dynCols} />
@@ -951,6 +998,11 @@ export default function AssetsPage() {
                           onClick={e => { e.stopPropagation(); setFormModal(a.id) }}
                           style={{ marginLeft: 4 }}>
                           ✏️
+                        </Btn>
+                        <Btn variant="ghost" size="sm"
+                          onClick={e => { e.stopPropagation(); cloneMutation.mutate(a.id) }}
+                          style={{ marginLeft: 4 }} title="Nhân bản tài sản">
+                          📋
                         </Btn>
                         <Btn variant="ghost" size="sm"
                           onClick={e => handleDelete(e, a)}

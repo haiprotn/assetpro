@@ -112,7 +112,7 @@ class AssetService:
 
         if q:
             where_parts.append(
-                "(a.name ILIKE :q OR a.asset_code ILIKE :q OR a.barcode ILIKE :q OR a.chassis_number ILIKE :q)"
+                "(a.name ILIKE :q OR a.asset_code ILIKE :q OR a.barcode ILIKE :q OR a.chassis_number ILIKE :q OR s.name ILIKE :q)"
             )
             params["q"] = f"%{q}%"
         if status:
@@ -137,6 +137,7 @@ class AssetService:
             " LEFT JOIN asset_type_groups atg ON atg.id  = at2.group_id"
             " LEFT JOIN locations       l   ON l.id   = a.current_location_id"
             " LEFT JOIN departments     d   ON d.id   = a.managing_department_id"
+            " LEFT JOIN suppliers       s   ON s.id   = a.supplier_id"
         )
 
         total = (await db.execute(
@@ -148,26 +149,35 @@ class AssetService:
         params["offset_val"] = (page - 1) * size
 
         _SORT_MAP = {
-            "name": "a.name", "asset_code": "a.asset_code", "status": "a.status",
+            "name": "a.name", "status": "a.status",
             "location": "l.name", "department": "d.name",
             "original_value": "a.original_value", "purchase_date": "a.purchase_date",
             "asset_type": "at2.name",
         }
-        order_col = _SORT_MAP.get(sort_by, "a.created_at")
         order_dir = "ASC" if str(sort_dir).lower() == "asc" else "DESC"
         if sort_by is None:
             order_dir = "DESC"  # default newest first
+
+        if sort_by == "asset_code":
+            order_clause = (
+                f"regexp_replace(a.asset_code, '[0-9]+', '', 'g') {order_dir}, "
+                f"NULLIF(regexp_replace(a.asset_code, '[^0-9]+', '', 'g'), '')::BIGINT {order_dir} NULLS LAST"
+            )
+        else:
+            order_col = _SORT_MAP.get(sort_by, "a.created_at")
+            order_clause = f"{order_col} {order_dir} NULLS LAST"
 
         rows = (await db.execute(text(f"""
             SELECT
                 a.*,
                 at2.name AS asset_type_name,
                 l.name   AS location_name,
-                d.name   AS department_name
+                d.name   AS department_name,
+                s.name   AS supplier_name
             FROM assets a
             {joins}
             WHERE {where}
-            ORDER BY {order_col} {order_dir} NULLS LAST
+            ORDER BY {order_clause}
             LIMIT :limit_val OFFSET :offset_val
         """), params)).mappings().all()
 
@@ -226,6 +236,52 @@ class AssetService:
             raise HTTPException(status_code=404, detail="Asset not found")
         orm_asset.is_active = False
         await db.commit()
+
+    @staticmethod
+    async def duplicate_asset(db: AsyncSession, asset_id: uuid.UUID, created_by: uuid.UUID):
+        orig = (await db.execute(select(Asset).where(Asset.id == asset_id))).scalar_one_or_none()
+        if not orig:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        base_code = orig.asset_code
+        new_code = f"{base_code}_COPY"
+        for i in range(1, 100):
+            candidate = new_code if i == 1 else f"{base_code}_COPY{i}"
+            exists = (await db.execute(select(Asset).where(Asset.asset_code == candidate))).scalar_one_or_none()
+            if not exists:
+                new_code = candidate
+                break
+        new_asset = Asset(
+            id=uuid.uuid4(),
+            asset_code=new_code,
+            name=f"[Nhân bản] {orig.name}",
+            status='PENDING_ALLOCATION',
+            asset_type_id=orig.asset_type_id,
+            legal_entity_id=orig.legal_entity_id,
+            managing_department_id=orig.managing_department_id,
+            current_location_id=orig.current_location_id,
+            supplier_id=orig.supplier_id,
+            model_series=orig.model_series,
+            year_manufactured=orig.year_manufactured,
+            country_manufactured=orig.country_manufactured,
+            purchase_price=orig.purchase_price,
+            original_value=orig.original_value,
+            depreciation_months=orig.depreciation_months,
+            loan_amount=orig.loan_amount,
+            purchase_date=orig.purchase_date,
+            warranty_end_date=orig.warranty_end_date,
+            expiry_date=orig.expiry_date,
+            warranty_months=orig.warranty_months,
+            registration_expiry=orig.registration_expiry,
+            quantity=orig.quantity,
+            description=orig.description,
+            condition_description=orig.condition_description,
+            tags=orig.tags,
+            dynamic_attributes=orig.dynamic_attributes or {},
+            created_by=created_by,
+        )
+        db.add(new_asset)
+        await db.commit()
+        return await AssetService.get_by_id(db, new_asset.id)
 
     @staticmethod
     async def upload_image(db: AsyncSession, asset_id: uuid.UUID, file, upload_dir: str):
@@ -381,7 +437,7 @@ class AssetService:
                 a.depreciation_value, a.depreciation_months, a.loan_amount,
                 a.purchase_date, a.report_increase_date, a.warranty_end_date,
                 a.expiry_date, a.warranty_months, a.chassis_number, a.engine_number,
-                a.registration_expiry, a.condition_description, a.description,
+                a.license_plate, a.registration_expiry, a.condition_description, a.description,
                 a.dynamic_attributes, a.asset_image_url, a.attachment_count, a.created_at,
                 le.name   AS legal_entity_name,
                 at2.name  AS asset_type_name,
@@ -471,6 +527,7 @@ class AssetService:
             ('dien_thoai_ncc',       'Điện thoại NCC',         lambda r: r.supplier_phone or ''),
             ('so_khung',             'Số Khung',               lambda r: r.chassis_number or ''),
             ('so_dong_co',           'Số Động cơ',             lambda r: r.engine_number or ''),
+            ('bien_so',              'Biển số xe',             lambda r: r.license_plate or ''),
             ('nam_nuoc_sx',          'Năm - Nước sản xuất',    lambda r: f"{r.year_manufactured or ''} {r.country_manufactured or ''}".strip()),
             ('thue_bao',             'Thuê bao',               lambda r: dyn(r, 'thue_bao')),
             ('thong_so_thiet_bi',    'Thông số thiết bị',      lambda r: dyn(r, 'thong_so_thiet_bi')),

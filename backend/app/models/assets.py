@@ -141,6 +141,7 @@ class Asset(Base):
     warranty_months: Mapped[int] = mapped_column(Integer, default=0)
     chassis_number: Mapped[Optional[str]] = mapped_column(String(100))
     engine_number: Mapped[Optional[str]] = mapped_column(String(100))
+    license_plate: Mapped[Optional[str]] = mapped_column(String(20))
     registration_expiry: Mapped[Optional[date]] = mapped_column(Date)
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     qty_allocated: Mapped[int] = mapped_column(Integer, default=0)

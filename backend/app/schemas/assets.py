@@ -70,6 +70,7 @@ class AssetBase(BaseModel):
     warranty_months: int = 0
     chassis_number: Optional[str] = None           # Số Khung
     engine_number: Optional[str] = None            # Số Động cơ
+    license_plate: Optional[str] = None            # Biển số xe
     registration_expiry: Optional[date] = None     # Hạn đăng kiểm
     quantity: int = 1
     description: Optional[str] = None
@@ -105,6 +106,7 @@ class AssetUpdate(BaseModel):
     warranty_months: Optional[int] = None
     chassis_number: Optional[str] = None
     engine_number: Optional[str] = None
+    license_plate: Optional[str] = None
     registration_expiry: Optional[date] = None
     quantity: Optional[int] = None
     status: Optional[str] = None
