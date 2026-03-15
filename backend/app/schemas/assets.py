@@ -20,6 +20,8 @@ class AttributeDefinitionOut(BaseModel):
     field_type: str
     field_unit: Optional[str]
     is_required: bool
+    is_searchable: bool = False
+    show_in_table: bool = False
     display_order: int
     select_options: Optional[List[str]]
     validation_rules: Optional[Dict]

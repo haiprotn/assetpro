@@ -844,6 +844,7 @@ function AttributeModal({ group, attr, onClose, onSaved }) {
     field_unit: attr?.field_unit || '',
     is_required: attr?.is_required || false,
     is_searchable: attr?.is_searchable || false,
+    show_in_table: attr?.show_in_table || false,
     display_order: attr?.display_order || 0,
     select_options: attr?.select_options || [],
   })
@@ -883,12 +884,15 @@ function AttributeModal({ group, attr, onClose, onSaved }) {
           <div><label style={labelSt}>Thứ tự</label>
             <input style={inputSt} type="number" value={form.display_order} onChange={e => set('display_order', +e.target.value)} /></div>
         </div>
-        <div style={{ display: 'flex', gap: 20 }}>
+        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
             <input type="checkbox" checked={form.is_required} onChange={e => set('is_required', e.target.checked)} /> Bắt buộc nhập
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
             <input type="checkbox" checked={form.is_searchable} onChange={e => set('is_searchable', e.target.checked)} /> Cho phép tìm kiếm
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+            <input type="checkbox" checked={form.show_in_table} onChange={e => set('show_in_table', e.target.checked)} /> Hiển thị cột trang tài sản
           </label>
         </div>
         {form.field_type === 'SELECT' && (

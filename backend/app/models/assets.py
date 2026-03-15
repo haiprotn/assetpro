@@ -81,6 +81,7 @@ class AttributeDefinition(Base):
     field_unit: Mapped[Optional[str]] = mapped_column(String(50))
     is_required: Mapped[bool] = mapped_column(Boolean, default=False)
     is_searchable: Mapped[bool] = mapped_column(Boolean, default=False)
+    show_in_table: Mapped[bool] = mapped_column(Boolean, default=False)
     display_order: Mapped[int] = mapped_column(Integer, default=0)
     select_options: Mapped[Optional[dict]] = mapped_column(JSONB)
     validation_rules: Mapped[Optional[dict]] = mapped_column(JSONB)

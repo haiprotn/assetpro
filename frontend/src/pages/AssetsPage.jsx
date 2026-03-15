@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
-import { assetApi, assetTypeApi } from '../services/api'
+import { assetApi, assetTypeApi, assetTypeGroupApi } from '../services/api'
 import { Card, PageHeader, StatusBadge, Btn, fmtVnd, DynAttrBadges, Spinner } from '../components/ui'
 import AssetFormModal from './AssetFormModal'
 
@@ -407,14 +407,15 @@ function ImportModal({ onClose, onDone }) {
 
 // ── ColPicker ──────────────────────────────────────────────────────────────
 
-function ColPicker({ visible, onChange }) {
+function ColPicker({ visible, onChange, dynCols = [] }) {
   const [open, setOpen] = useState(false)
+  const allCols = [...TABLE_COLUMNS, ...dynCols]
 
   const toggle = (key) => {
     const next = visible.includes(key)
       ? visible.filter(k => k !== key)
       : [...visible, key]
-    const ordered = TABLE_COLUMNS.map(c => c.key).filter(k => next.includes(k))
+    const ordered = allCols.map(c => c.key).filter(k => next.includes(k))
     onChange(ordered)
     localStorage.setItem(LS_COLS, JSON.stringify(ordered))
   }
@@ -431,7 +432,7 @@ function ColPicker({ visible, onChange }) {
             position: 'absolute', top: '100%', right: 0, marginTop: 6,
             background: 'white', border: '1px solid #e2e8f0', borderRadius: 10,
             boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 100,
-            padding: '12px 14px', width: 220,
+            padding: '12px 14px', width: 240, maxHeight: 400, overflowY: 'auto',
           }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>
               Chọn cột hiển thị
@@ -452,6 +453,29 @@ function ColPicker({ visible, onChange }) {
                 {col.label}
               </label>
             ))}
+            {dynCols.length > 0 && (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', margin: '10px 0 6px', textTransform: 'uppercase', letterSpacing: 0.5, borderTop: '1px solid #f1f5f9', paddingTop: 8 }}>
+                  Thuộc tính động
+                </div>
+                {dynCols.map(col => (
+                  <label key={col.key} style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '5px 4px', cursor: 'pointer', borderRadius: 5,
+                    fontSize: 13, color: '#1e293b',
+                    background: visible.includes(col.key) ? '#f0f4ff' : 'transparent',
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={visible.includes(col.key)}
+                      onChange={() => toggle(col.key)}
+                      style={{ width: 14, height: 14, cursor: 'pointer' }}
+                    />
+                    {col.label}
+                  </label>
+                ))}
+              </>
+            )}
           </div>
         </>
       )}
@@ -719,6 +743,12 @@ function AssetCell({ colKey, asset, onImageClick }) {
     case 'ngay_mua':
       return td(fmtDate(asset.purchase_date), { fontSize: 12 })
     default:
+      // Dynamic attribute column: key starts with 'dyn_'
+      if (colKey.startsWith('dyn_')) {
+        const attrKey = colKey.slice(4)
+        const val = asset.dynamic_attributes?.[attrKey]
+        return td(val != null ? String(val) : '—', { fontSize: 12, color: 'var(--muted)' })
+      }
       return td('—')
   }
 }
@@ -762,11 +792,24 @@ export default function AssetsPage() {
     queryFn: () => assetTypeApi.list().then(r => r.data),
   })
 
+  const { data: attrGroups } = useQuery({
+    queryKey: ['asset-types-config'],
+    queryFn: () => assetTypeGroupApi.list().then(r => r.data),
+  })
+
+  // Dynamic attribute columns (show_in_table = true), prefixed with 'dyn_' to avoid key collision
+  const dynCols = (attrGroups || []).flatMap(g =>
+    (g.attributes || [])
+      .filter(a => a.show_in_table)
+      .map(a => ({ key: `dyn_${a.field_key}`, label: a.field_label + (a.field_unit ? ` (${a.field_unit})` : '') }))
+  ).filter((col, idx, arr) => arr.findIndex(c => c.key === col.key) === idx)
+
   const assets = data?.items || []
   const total = data?.total || 0
   const totalPages = Math.ceil(total / 20)
 
-  const activeCols = TABLE_COLUMNS.filter(c => visibleCols.includes(c.key))
+  const allCols = [...TABLE_COLUMNS, ...dynCols]
+  const activeCols = allCols.filter(c => visibleCols.includes(c.key))
 
   const deleteMutation = useMutation({
     mutationFn: (id) => assetApi.delete(id),
@@ -848,7 +891,7 @@ export default function AssetsPage() {
               <option key={g.code} value={g.code}>{g.name}</option>
             ))}
           </select>
-          <ColPicker visible={visibleCols} onChange={setVisibleCols} />
+          <ColPicker visible={visibleCols} onChange={setVisibleCols} dynCols={dynCols} />
         </div>
 
         {/* Table */}
