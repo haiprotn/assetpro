@@ -123,6 +123,23 @@ async def get_asset_by_code(
     return asset
 
 
+@router.get("/trash", response_model=list)
+async def list_trash(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    return await AssetService.list_trash(db)
+
+
+@router.delete("/{asset_id}/permanent", status_code=204)
+async def permanent_delete_asset(
+    asset_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    await AssetService.permanent_delete(db, asset_id)
+
+
 @router.post("/{asset_id}/duplicate", response_model=AssetOut, status_code=201)
 async def duplicate_asset(
     asset_id: uuid.UUID,

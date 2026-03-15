@@ -13,6 +13,8 @@ const NAV = [
   { to: '/departments', icon: '🏢', label: 'Phòng ban' },
   { to: '/asset-types', icon: '🏷️', label: 'Loại tài sản' },
   { to: '/config',      icon: '⚙️', label: 'Cấu hình' },
+  { separator: true },
+  { to: '/trash',       icon: '🗑️', label: 'Thùng rác' },
 ]
 
 const ROLE_LABEL = {

@@ -241,6 +241,31 @@ class AssetService:
         await db.commit()
 
     @staticmethod
+    async def list_trash(db: AsyncSession):
+        result = await db.execute(
+            select(Asset).where(Asset.is_active == False).order_by(Asset.asset_code)
+        )
+        assets = result.scalars().all()
+        return [
+            {
+                "id": str(a.id),
+                "asset_code": a.asset_code,
+                "name": a.name,
+                "status": a.status,
+            }
+            for a in assets
+        ]
+
+    @staticmethod
+    async def permanent_delete(db: AsyncSession, asset_id: uuid.UUID):
+        result = await db.execute(select(Asset).where(Asset.id == asset_id, Asset.is_active == False))
+        asset = result.scalar_one_or_none()
+        if not asset:
+            raise HTTPException(status_code=404, detail="Không tìm thấy tài sản trong thùng rác")
+        await db.delete(asset)
+        await db.commit()
+
+    @staticmethod
     async def duplicate_asset(db: AsyncSession, asset_id: uuid.UUID, created_by: uuid.UUID):
         orig = (await db.execute(select(Asset).where(Asset.id == asset_id))).scalar_one_or_none()
         if not orig:

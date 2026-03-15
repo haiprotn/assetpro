@@ -15,6 +15,7 @@ import ConfigPage from './pages/ConfigPage'
 import DepartmentsPage from './pages/DepartmentsPage'
 import AssetTypesPage from './pages/AssetTypesPage'
 import LocationPage from './pages/LocationPage'
+import TrashPage from './pages/TrashPage'
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useAuthStore()
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="departments"        element={<DepartmentsPage />} />
         <Route path="asset-types"        element={<AssetTypesPage />} />
         <Route path="config"             element={<ConfigPage />} />
+        <Route path="trash"              element={<TrashPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

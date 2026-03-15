@@ -38,6 +38,8 @@ export const assetApi = {
   duplicate:   (id) => api.post(`/assets/${id}/duplicate`),
   getQrImage:  (id) => api.get(`/assets/${id}/qr-image`, { responseType: 'blob' }),
   getLifecycle: (id) => api.get(`/assets/${id}/lifecycle`),
+  trash:           () => api.get('/assets/trash'),
+  permanentDelete: (id) => api.delete(`/assets/${id}/permanent`),
   alerts:      () => api.get('/assets/alerts'),
   export:      (params) => api.get('/assets/export', { params, responseType: 'blob' }),
 }
