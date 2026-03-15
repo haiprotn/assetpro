@@ -234,6 +234,9 @@ class AssetService:
         orm_asset = check.scalar_one_or_none()
         if not orm_asset:
             raise HTTPException(status_code=404, detail="Asset not found")
+        # Giải phóng asset_code để có thể dùng lại sau khi xóa
+        import time
+        orm_asset.asset_code = f"{orm_asset.asset_code}_DEL_{int(time.time())}"
         orm_asset.is_active = False
         await db.commit()
 

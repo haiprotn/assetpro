@@ -87,6 +87,7 @@ class AssetCreate(AssetBase):
 
 
 class AssetUpdate(BaseModel):
+    asset_code: Optional[str] = None
     name: Optional[str] = None
     barcode: Optional[str] = None
     asset_type_id: Optional[UUID] = None

@@ -424,7 +424,7 @@ export default function AssetFormModal({ assetId, onClose, onSaved }) {
                 <Field label="Mã tài sản" required>
                   <input value={form.asset_code} onChange={e => set('asset_code', e.target.value)}
                     style={{ ...inp, borderColor: errors.asset_code ? '#ef4444' : '#cbd5e1' }}
-                    placeholder="VD: MRN1, XE001..." disabled={isEdit} />
+                    placeholder="VD: MRN1, XE001..." />
                   <ErrMsg msg={errors.asset_code} />
                 </Field>
               </div>
