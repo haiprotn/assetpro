@@ -58,7 +58,7 @@ async def list_groups(db: AsyncSession = Depends(get_db), current_user=Depends(g
         gids = [str(g["id"]) for g in groups]
         attr_rows = (await db.execute(text("""
             SELECT id, group_id, field_key, field_label, field_type,
-                   field_unit, is_required, is_searchable, display_order, select_options
+                   field_unit, is_required, is_searchable, show_in_table, display_order, select_options
             FROM attribute_definitions
             WHERE group_id = ANY(:gids)
             ORDER BY display_order, field_label
