@@ -565,7 +565,13 @@ class AssetService:
                     img_path = os.path.join(_upload_dir, os.path.basename(row.asset_image_url))
                     if os.path.exists(img_path):
                         try:
-                            xl_img = XlImage(img_path)
+                            from PIL import Image as PILImage
+                            pil_img = PILImage.open(img_path)
+                            pil_img.thumbnail((120, 90), PILImage.LANCZOS)
+                            thumb_buf = io.BytesIO()
+                            pil_img.convert('RGB').save(thumb_buf, format='JPEG', quality=55, optimize=True)
+                            thumb_buf.seek(0)
+                            xl_img = XlImage(thumb_buf)
                             xl_img.width, xl_img.height = 60, 50
                             cell_addr = ws.cell(row=ri, column=ci).coordinate
                             ws.add_image(xl_img, cell_addr)
