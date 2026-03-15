@@ -216,6 +216,7 @@ class AttributeCreate(BaseModel):
     field_unit: Optional[str] = None
     is_required: bool = False
     is_searchable: bool = False
+    show_in_table: bool = False
     display_order: int = 0
     select_options: Optional[list] = None
 
@@ -226,6 +227,7 @@ class AttributeUpdate(BaseModel):
     field_unit: Optional[str] = None
     is_required: Optional[bool] = None
     is_searchable: Optional[bool] = None
+    show_in_table: Optional[bool] = None
     display_order: Optional[int] = None
     select_options: Optional[list] = None
 
@@ -250,6 +252,7 @@ async def create_attribute(
         field_unit=data.field_unit,
         is_required=data.is_required,
         is_searchable=data.is_searchable,
+        show_in_table=data.show_in_table,
         display_order=data.display_order,
         select_options=data.select_options,
     )
