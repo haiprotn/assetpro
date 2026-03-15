@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 220" width="200" height="220">
+  <!-- Yellow outer triangle -->
+  <polygon points="100,10 195,160 5,160" fill="#F5C518" />
+  <!-- Red inner triangle (house body) -->
+  <polygon points="100,28 178,155 22,155" fill="#C0392B" />
+  <!-- White road line inside red triangle -->
+  <rect x="88" y="60" width="24" height="90" fill="white" rx="3"/>
+  <rect x="62" y="130" width="76" height="12" fill="white" rx="3"/>
+  <!-- Red banner -->
+  <rect x="5" y="162" width="190" height="32" fill="#C0392B" rx="2"/>
+  <!-- Gold text DONG THUAN HA -->
+  <text x="100" y="183" text-anchor="middle" fill="#F5C518" font-family="Arial" font-weight="900" font-size="16" letter-spacing="1">DONG THUAN HA</text>
+  <!-- Gray road -->
+  <rect x="5" y="194" width="190" height="20" fill="#6B7280" rx="2"/>
+  <!-- Dashed yellow line on road -->
+  <line x1="20" y1="204" x2="40" y2="204" stroke="#F5C518" stroke-width="2.5" stroke-dasharray="8,6"/>
+  <line x1="50" y1="204" x2="70" y2="204" stroke="#F5C518" stroke-width="2.5" stroke-dasharray="8,6"/>
+  <line x1="80" y1="204" x2="100" y2="204" stroke="#F5C518" stroke-width="2.5" stroke-dasharray="8,6"/>
+  <line x1="110" y1="204" x2="130" y2="204" stroke="#F5C518" stroke-width="2.5" stroke-dasharray="8,6"/>
+  <line x1="140" y1="204" x2="160" y2="204" stroke="#F5C518" stroke-width="2.5" stroke-dasharray="8,6"/>
+  <line x1="170" y1="204" x2="185" y2="204" stroke="#F5C518" stroke-width="2.5" stroke-dasharray="8,6"/>
+</svg>

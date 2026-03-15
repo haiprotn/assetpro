@@ -1,0 +1,368 @@
+{
+  "headers": [
+    [
+      1,
+      "Pháp nhân sở hữu"
+    ],
+    [
+      2,
+      "Mã Qrcode"
+    ],
+    [
+      3,
+      "Ảnh tài sản"
+    ],
+    [
+      4,
+      "Mã TS"
+    ],
+    [
+      5,
+      "Barcode"
+    ],
+    [
+      6,
+      "Tên tài sản"
+    ],
+    [
+      7,
+      "Link tài sản"
+    ],
+    [
+      8,
+      "Loại tài sản"
+    ],
+    [
+      9,
+      "Loại TS"
+    ],
+    [
+      10,
+      "Kiểu cấp phát loại tài sản"
+    ],
+    [
+      11,
+      "Thuộc tính loại tài sản"
+    ],
+    [
+      12,
+      "Số lượng"
+    ],
+    [
+      13,
+      "SL Bảo trì, Sửa chữa"
+    ],
+    [
+      14,
+      "SL còn lại"
+    ],
+    [
+      15,
+      "SL thanh lý"
+    ],
+    [
+      16,
+      "SL mất"
+    ],
+    [
+      17,
+      "SL huỷ"
+    ],
+    [
+      18,
+      "SL hỏng"
+    ],
+    [
+      19,
+      "Vị trí tài sản"
+    ],
+    [
+      20,
+      "Phòng ban quản lý"
+    ],
+    [
+      21,
+      "Đơn vị"
+    ],
+    [
+      22,
+      "Model / Series"
+    ],
+    [
+      23,
+      "Nhà cung cấp"
+    ],
+    [
+      24,
+      "Địa chỉ"
+    ],
+    [
+      25,
+      "Điện thoại"
+    ],
+    [
+      26,
+      "Khấu hao (tháng)"
+    ],
+    [
+      27,
+      "Giá mua"
+    ],
+    [
+      28,
+      "Ngày mua"
+    ],
+    [
+      29,
+      "Ngày kết thúc BH"
+    ],
+    [
+      30,
+      "Ngày báo tăng"
+    ],
+    [
+      31,
+      "Ngày hết hạn"
+    ],
+    [
+      32,
+      "Thời gian BH (tháng)"
+    ],
+    [
+      33,
+      "Mô tả"
+    ],
+    [
+      34,
+      "Đang sử dụng"
+    ],
+    [
+      35,
+      "SL đã cấp phát"
+    ],
+    [
+      36,
+      "Lượt cấp phát"
+    ],
+    [
+      37,
+      "SL thu hồi"
+    ],
+    [
+      38,
+      "Đã thu hồi"
+    ],
+    [
+      39,
+      "Nguyên giá"
+    ],
+    [
+      40,
+      "Trạng thái"
+    ],
+    [
+      41,
+      "Giá trị khấu hao"
+    ],
+    [
+      42,
+      "Nhân sự sử dụng"
+    ],
+    [
+      43,
+      "Người sử dụng"
+    ],
+    [
+      44,
+      "Mã người sử dụng"
+    ],
+    [
+      45,
+      "Phòng ban sử dụng"
+    ],
+    [
+      46,
+      "Đơn vị cấp trên"
+    ],
+    [
+      47,
+      "Phòng ban nhận"
+    ],
+    [
+      48,
+      "Nhãn tài sản"
+    ],
+    [
+      49,
+      "Ngày tạo"
+    ],
+    [
+      50,
+      "Lý do cấp phát"
+    ],
+    [
+      51,
+      "Số lượng file đính kèm"
+    ],
+    [
+      52,
+      "Thảo luận"
+    ],
+    [
+      53,
+      "Hạn đăng kiểm"
+    ],
+    [
+      54,
+      "Số Khung"
+    ],
+    [
+      55,
+      "Số động cơ"
+    ],
+    [
+      56,
+      "Diễn giải tình trạng"
+    ],
+    [
+      57,
+      "Năm sản xuất - Nước sản xuất"
+    ],
+    [
+      58,
+      "Thuê bao"
+    ],
+    [
+      59,
+      "Đã vay"
+    ],
+    [
+      60,
+      "Thông số thiết bị"
+    ]
+  ],
+  "row2": {
+    "Pháp nhân sở hữu": "None",
+    "Mã Qrcode": "None",
+    "Ảnh tài sản": "None",
+    "Mã TS": "'ACN1'",
+    "Barcode": "None",
+    "Tên tài sản": "'Áo phản quang'",
+    "Link tài sản": "'https://dth.1office.vn/asset-asset/view?ID=1909'",
+    "Loại tài sản": "None",
+    "Loại TS": "None",
+    "Kiểu cấp phát loại tài sản": "'Cấp phát 1 lần (Tài sản tiêu hao)'",
+    "Thuộc tính loại tài sản": "'Tài sản cố định hữu hình'",
+    "Số lượng": "10",
+    "SL Bảo trì, Sửa chữa": "0",
+    "SL còn lại": "10",
+    "SL thanh lý": "0",
+    "SL mất": "0",
+    "SL huỷ": "0",
+    "SL hỏng": "None",
+    "Vị trí tài sản": "'TRƯỜNG CHINH - TÂY NINH'",
+    "Phòng ban quản lý": "'PHÒNG TỔ CHỨC HÀNH CHÍNH'",
+    "Đơn vị": "'Cái'",
+    "Model / Series": "None",
+    "Nhà cung cấp": "'H$T'",
+    "Địa chỉ": "None",
+    "Điện thoại": "None",
+    "Khấu hao (tháng)": "0",
+    "Giá mua": "29000",
+    "Ngày mua": "'08/05/2025'",
+    "Ngày kết thúc BH": "None",
+    "Ngày báo tăng": "'08/05/2025'",
+    "Ngày hết hạn": "None",
+    "Thời gian BH (tháng)": "0",
+    "Mô tả": "None",
+    "Đang sử dụng": "0",
+    "SL đã cấp phát": "0",
+    "Lượt cấp phát": "0",
+    "SL thu hồi": "0",
+    "Đã thu hồi": "0",
+    "Nguyên giá": "290000",
+    "Trạng thái": "'Chờ cấp phát'",
+    "Giá trị khấu hao": "0",
+    "Nhân sự sử dụng": "None",
+    "Người sử dụng": "None",
+    "Mã người sử dụng": "None",
+    "Phòng ban sử dụng": "None",
+    "Đơn vị cấp trên": "None",
+    "Phòng ban nhận": "None",
+    "Nhãn tài sản": "None",
+    "Ngày tạo": "'17/05/2025'",
+    "Lý do cấp phát": "None",
+    "Số lượng file đính kèm": "0",
+    "Thảo luận": "None",
+    "Hạn đăng kiểm": "None",
+    "Số Khung": "None",
+    "Số động cơ": "None",
+    "Diễn giải tình trạng": "None",
+    "Năm sản xuất - Nước sản xuất": "None",
+    "Thuê bao": "0",
+    "Đã vay": "0",
+    "Thông số thiết bị": "None"
+  },
+  "row3": {
+    "Pháp nhân sở hữu": "None",
+    "Mã Qrcode": "None",
+    "Ảnh tài sản": "None",
+    "Mã TS": "'ACN10'",
+    "Barcode": "None",
+    "Tên tài sản": "'Áo phản quang'",
+    "Link tài sản": "'https://dth.1office.vn/asset-asset/view?ID=2182'",
+    "Loại tài sản": "None",
+    "Loại TS": "None",
+    "Kiểu cấp phát loại tài sản": "'Cấp phát 1 lần (Tài sản tiêu hao)'",
+    "Thuộc tính loại tài sản": "'Tài sản cố định hữu hình'",
+    "Số lượng": "50",
+    "SL Bảo trì, Sửa chữa": "0",
+    "SL còn lại": "50",
+    "SL thanh lý": "0",
+    "SL mất": "0",
+    "SL huỷ": "0",
+    "SL hỏng": "None",
+    "Vị trí tài sản": "'DT744 - BÌNH DƯƠNG'",
+    "Phòng ban quản lý": "'PHÒNG TỔ CHỨC HÀNH CHÍNH'",
+    "Đơn vị": "'Cái'",
+    "Model / Series": "None",
+    "Nhà cung cấp": "'H&T'",
+    "Địa chỉ": "None",
+    "Điện thoại": "None",
+    "Khấu hao (tháng)": "0",
+    "Giá mua": "28000",
+    "Ngày mua": "'14/08/2025'",
+    "Ngày kết thúc BH": "None",
+    "Ngày báo tăng": "'14/08/2025'",
+    "Ngày hết hạn": "None",
+    "Thời gian BH (tháng)": "0",
+    "Mô tả": "None",
+    "Đang sử dụng": "0",
+    "SL đã cấp phát": "0",
+    "Lượt cấp phát": "0",
+    "SL thu hồi": "0",
+    "Đã thu hồi": "0",
+    "Nguyên giá": "1400000",
+    "Trạng thái": "'Chờ cấp phát'",
+    "Giá trị khấu hao": "0",
+    "Nhân sự sử dụng": "None",
+    "Người sử dụng": "None",
+    "Mã người sử dụng": "None",
+    "Phòng ban sử dụng": "None",
+    "Đơn vị cấp trên": "None",
+    "Phòng ban nhận": "None",
+    "Nhãn tài sản": "None",
+    "Ngày tạo": "'16/08/2025'",
+    "Lý do cấp phát": "None",
+    "Số lượng file đính kèm": "0",
+    "Thảo luận": "None",
+    "Hạn đăng kiểm": "None",
+    "Số Khung": "None",
+    "Số động cơ": "None",
+    "Diễn giải tình trạng": "None",
+    "Năm sản xuất - Nước sản xuất": "None",
+    "Thuê bao": "0",
+    "Đã vay": "0",
+    "Thông số thiết bị": "None"
+  }
+}

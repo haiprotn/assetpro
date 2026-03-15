@@ -1,0 +1,126 @@
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800;900&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --primary:   #1a2744;
+  --accent:    #f59e0b;
+  --success:   #10b981;
+  --warning:   #f59e0b;
+  --danger:    #ef4444;
+  --info:      #3b82f6;
+  --bg:        #f0f2f5;
+  --card:      #ffffff;
+  --border:    #e2e8f0;
+  --text:      #1e293b;
+  --muted:     #64748b;
+  --radius:    10px;
+  --shadow:    0 1px 4px rgba(0,0,0,0.08);
+}
+
+body {
+  font-family: 'Be Vietnam Pro', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+a { color: inherit; text-decoration: none; }
+
+button { font-family: inherit; cursor: pointer; }
+
+input, select, textarea {
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(26,39,68,0.1);
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+/* ── Mobile responsive ─────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Show mobile topbar */
+  .mobile-topbar { display: flex !important; }
+
+  /* Show backdrop */
+  .mobile-backdrop { display: block !important; }
+
+  /* Show sidebar close button */
+  .sidebar-close-btn { display: block !important; }
+
+  /* Sidebar: hidden off-screen by default, slides in when open */
+  .app-sidebar {
+    position: fixed !important;
+    top: 0; left: 0;
+    height: 100vh !important;
+    z-index: 100;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+  }
+  .app-sidebar.sidebar-open {
+    transform: translateX(0);
+  }
+
+  /* Dashboard stat grid: 2 cols on mobile */
+  .stat-grid-4 { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Table: horizontal scroll */
+  .table-scroll-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Page header: stack on mobile */
+  .page-header-row {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+  .page-header-actions {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Filter bar: wrap on mobile */
+  .filter-bar {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+  .filter-bar > * { min-width: 0; flex: 1 1 140px; }
+
+  /* Forms: full width inputs */
+  .form-grid-2 { grid-template-columns: 1fr !important; }
+  .form-grid-3 { grid-template-columns: 1fr !important; }
+
+  /* Modal: full screen on mobile */
+  .modal-box {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    min-height: 100vh !important;
+    overflow-y: auto;
+  }
+
+  /* Padding adjustments */
+  .page-padding { padding: 12px !important; }
+
+  /* Chart grid 2-col → 1-col on mobile */
+  .chart-grid-2 { grid-template-columns: 1fr !important; }
+
+  /* Hide non-essential table columns on mobile via data-mobile attr */
+  td[data-mobile="hide"], th[data-mobile="hide"] { display: none; }
+
+  /* Transfer/Maintenance filter bars */
+  .filter-bar > input { min-width: 100% !important; flex-basis: 100% !important; }
+
+  /* Stat cards font scale */
+  .stat-grid-4 > div { padding: 14px !important; }
+}

@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \":*)",
+      "Bash(docker exec asset_backend python -c \":*)",
+      "Bash(python -c \"import sys; data=sys.stdin.buffer.read\\(\\); print\\(data.decode\\(''utf-8''\\)\\)\")",
+      "Bash(docker exec asset_db psql -U asset_user -d asset_management -c \"\\\\d departments\")",
+      "Bash(docker exec asset_db psql -U asset_user -d asset_management -c \"SELECT COUNT\\(*\\) total FROM departments; SELECT COUNT\\(*\\) total FROM locations; SELECT COUNT\\(*\\) total FROM suppliers; SELECT COUNT\\(*\\) total FROM asset_types;\")",
+      "Bash(docker exec asset_db psql -U asset_user -d asset_management -c \"SELECT code, name FROM departments ORDER BY name;\")",
+      "Bash(docker exec asset_db psql -U asset_user -d asset_management -c \"\\\\d assets\")",
+      "Bash(docker exec asset_db psql -U asset_user -d asset_management -c \":*)",
+      "Bash(docker exec asset_db psql -U asset_user -d asset_management -c \"\\\\d suppliers\")",
+      "Bash(docker exec asset_db psql -U asset_user -d asset_management -c \"\\\\d locations\")",
+      "Bash(docker exec asset_db psql -U asset_user -d asset_management -c \"SELECT COUNT\\(*\\) FROM users;\")",
+      "Bash(docker exec asset_backend sh -c \"rm -f /app/uploads/assets/* && echo ''Đã xóa ảnh cũ''\")",
+      "Bash(docker exec asset_backend python -c \"from app.services.asset_service import AssetService; print\\(''OK''\\)\")",
+      "Bash(docker restart asset_backend)",
+      "Bash(docker exec asset_backend python -c \"from app.main import app; print\\(''OK''\\)\")",
+      "Bash(docker exec asset_backend ls /app/uploads/assets)",
+      "Bash(docker exec asset_backend ls //app/uploads/assets)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:8001/uploads/assets/ATOMAT1.jpg\")"
+    ]
+  }
+}

@@ -1,0 +1,86 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: asset_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: asset_management
+      POSTGRES_USER: asset_user
+      POSTGRES_PASSWORD: AssetPro2026
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./backend/db/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U asset_user -d asset_management"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    container_name: asset_redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "Redis2026"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: asset_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://asset_user:AssetPro2026@postgres:5432/asset_management
+      REDIS_URL: redis://:Redis2026@redis:6379/0
+      SECRET_KEY: DongThuanHa-AssetPro-SecretKey-2026
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 480
+      ENVIRONMENT: production  # Chuyển sang production
+      # Cập nhật CORS tại đây để bảo mật dữ liệu của Giai Phap Tay Phat
+      CORS_ORIGINS: "https://dongthuanhaqlts.com,https://api.dongthuanhaqlts.com"
+      UPLOAD_DIR: /app/uploads/assets
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./backend:/app
+      - asset_images:/app/uploads/assets
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Quan trọng: Trỏ trực tiếp về subdomain API bạn đã cấu hình trên Cloudflare
+        VITE_API_BASE_URL: https://api.dongthuanhaqlts.com/api/v1
+    container_name: asset_frontend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    depends_on:
+      - backend
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: asset_tunnel
+    restart: unless-stopped
+    command: tunnel run
+    network_mode: host
+    environment:
+      - TUNNEL_TOKEN=eyJhIjoiZjY1MDFkNTEwZTAwOWNmMDcwNzJiYjIxYmMxZTY5MjIiLCJ0IjoiNmU1NzkzNzUtYmZmYy00MThkLTk4YmQtYzJiMjhjMzNkYWZkIiwicyI6IlpqazNZVFEzTXpZdFptWmlOUzAwTlRreExXSXlZek10TXpFNE1qVXpNek0zT1RCaiJ9
+
+
+volumes:
+  pgdata:
+  redisdata:
+  asset_images:

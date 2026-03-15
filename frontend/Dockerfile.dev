@@ -1,0 +1,14 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Cài dependencies
+COPY package*.json ./
+RUN npm install
+
+# Copy toàn bộ source (bao gồm src/, public/, index.html, vite.config.js)
+COPY . .
+
+EXPOSE 3001
+
+CMD ["npm", "run", "dev"]
