@@ -19,7 +19,8 @@
       "Bash(docker exec asset_backend ls /app/uploads/assets)",
       "Bash(docker exec asset_backend ls //app/uploads/assets)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:8001/uploads/assets/ATOMAT1.jpg\")",
-      "Bash(find e:/Phanmemquanlytaisan/github/assetpro/backend -name *.sql -o -name alembic*)"
+      "Bash(find e:/Phanmemquanlytaisan/github/assetpro/backend -name *.sql -o -name alembic*)",
+      "Bash(xargs grep:*)"
     ]
   }
 }
