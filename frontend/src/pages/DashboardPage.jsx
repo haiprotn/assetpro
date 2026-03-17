@@ -1,4 +1,6 @@
+import { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { dashboardApi, transferApi } from '../services/api'
 import { Card, PageHeader, StatusBadge, fmtVnd, Spinner } from '../components/ui'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
@@ -19,15 +21,63 @@ const StatCard = ({ icon, label, value, sub, color = '#1a2744' }) => (
   </Card>
 )
 
-const AlertRow = ({ icon, label, count, color }) => count > 0 ? (
-  <div style={{
-    display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px',
-    background: color + '0f', border: `1px solid ${color}30`, borderRadius: 8, fontSize: 13
-  }}>
-    <span style={{ fontSize: 16 }}>{icon}</span>
-    <span style={{ color, fontWeight: 700 }}>{count} {label}</span>
-  </div>
-) : null
+const AlertRow = ({ icon, label, count, color, assets = [] }) => {
+  const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  if (count <= 0) return null
+
+  const handleClick = () => {
+    if (assets.length === 1) {
+      navigate(`/assets/${assets[0].id}`)
+    } else {
+      setOpen(o => !o)
+    }
+  }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <div onClick={handleClick} style={{
+        display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px',
+        background: color + '0f', border: `1px solid ${color}30`, borderRadius: 8, fontSize: 13,
+        cursor: 'pointer', userSelect: 'none',
+      }}>
+        <span style={{ fontSize: 16 }}>{icon}</span>
+        <span style={{ color, fontWeight: 700 }}>{count} {label}</span>
+        {assets.length > 1 && <span style={{ color, fontSize: 11, marginLeft: 2 }}>▾</span>}
+      </div>
+      {open && assets.length > 1 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 100,
+          background: 'var(--card-bg, #fff)', border: '1px solid var(--border)',
+          borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+          minWidth: 280, maxHeight: 280, overflowY: 'auto',
+        }}>
+          {assets.map(a => (
+            <div key={a.id} onClick={() => { navigate(`/assets/${a.id}`); setOpen(false) }} style={{
+              padding: '8px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border)',
+              fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}
+              onMouseEnter={e => e.currentTarget.style.background = color + '10'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              <span><strong>{a.code}</strong> — {a.name}</span>
+              <span style={{ color: color, fontSize: 11, marginLeft: 8, whiteSpace: 'nowrap' }}>{a.expiry}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function DashboardPage() {
   const { data: summary, isLoading: loadSummary } = useQuery({
@@ -67,10 +117,12 @@ export default function DashboardPage() {
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
           <AlertRow icon="🚨" color="#ef4444"
             count={alerts?.registration_expiry?.length || 0}
-            label="tài sản hết hạn đăng kiểm" />
+            label="tài sản hết hạn đăng kiểm"
+            assets={alerts?.registration_expiry || []} />
           <AlertRow icon="⚠️" color="#f59e0b"
             count={alerts?.calibration_expiry?.length || 0}
-            label="thiết bị sắp hết hạn hiệu chuẩn" />
+            label="thiết bị sắp hết hạn hiệu chuẩn"
+            assets={alerts?.calibration_expiry || []} />
         </div>
 
         {/* Stats */}
