@@ -41,34 +41,67 @@ const STATUS_VI = {
 const fieldLabel  = k => FIELD_VI[k]  || k
 const statusLabel = v => (typeof v === 'string' && STATUS_VI[v]) ? STATUS_VI[v] : v
 
+// Các trường không cần hiển thị trong diff
+const SKIP_DIFF_FIELDS = new Set(['updated_at', 'created_at', 'dynamic_attributes', 'id'])
+
+// Dịch event_description từ backend sang tiếng Việt
+function translateDescription(text) {
+  if (!text) return text
+  // "Status changed: A → B"
+  const m = text.match(/Status changed:\s*(\w+)\s*[→\->]+\s*(\w+)/i)
+  if (m) {
+    const from = STATUS_VI[m[1]] || m[1]
+    const to   = STATUS_VI[m[2]] || m[2]
+    return `Trạng thái thay đổi: ${from} → ${to}`
+  }
+  return text
+}
+
 const fmtTime = d => new Date(d).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
 const fmtDate = d => new Date(d).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })
 const fmtFull = d => new Date(d).toLocaleString('vi-VN', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 
 // ── Thay đổi trước → sau ─────────────────────────────────────────────────────
+function safeVal(v) {
+  if (v === null || v === undefined) return null
+  if (typeof v === 'object') return null  // bỏ qua object phức tạp
+  const s = String(v)
+  return statusLabel(s)
+}
+
 function DiffBadges({ prev, next }) {
   if (!prev && !next) return null
   const keys = Array.from(new Set([...Object.keys(prev || {}), ...Object.keys(next || {})]))
-  const changed = keys.filter(k => prev?.[k] !== next?.[k])
+    .filter(k => !SKIP_DIFF_FIELDS.has(k))
+  const changed = keys.filter(k => {
+    const a = prev?.[k], b = next?.[k]
+    if (typeof a === 'object' || typeof b === 'object') return false
+    return a !== b
+  })
   if (!changed.length) return null
   return (
     <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 6 }}>
-      {changed.map(k => (
-        <span key={k} style={{
-          fontSize: 11, background: '#fff', border: '1px solid #e2e8f0',
-          borderRadius: 6, padding: '3px 9px', color: '#475569',
-          display: 'inline-flex', gap: 5, alignItems: 'center', boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
-        }}>
-          <span style={{ color: '#94a3b8', fontWeight: 600 }}>{fieldLabel(k)}</span>
-          {prev?.[k] !== undefined && (
-            <span style={{ color: '#ef4444', textDecoration: 'line-through' }}>{statusLabel(String(prev[k]))}</span>
-          )}
-          <span style={{ color: '#cbd5e1' }}>→</span>
-          {next?.[k] !== undefined && (
-            <span style={{ color: '#10b981', fontWeight: 700 }}>{statusLabel(String(next[k]))}</span>
-          )}
-        </span>
-      ))}
+      {changed.map(k => {
+        const fromVal = safeVal(prev?.[k])
+        const toVal   = safeVal(next?.[k])
+        if (fromVal === null && toVal === null) return null
+        return (
+          <span key={k} style={{
+            fontSize: 11, background: '#fff', border: '1px solid #e2e8f0',
+            borderRadius: 6, padding: '3px 9px', color: '#475569',
+            display: 'inline-flex', gap: 5, alignItems: 'center', boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
+          }}>
+            <span style={{ color: '#94a3b8', fontWeight: 600 }}>{fieldLabel(k)}:</span>
+            {fromVal !== null && (
+              <span style={{ color: '#ef4444', textDecoration: 'line-through' }}>{fromVal}</span>
+            )}
+            <span style={{ color: '#cbd5e1' }}>→</span>
+            {toVal !== null && (
+              <span style={{ color: '#10b981', fontWeight: 700 }}>{toVal}</span>
+            )}
+          </span>
+        )
+      })}
     </div>
   )
 }
@@ -127,7 +160,7 @@ function EventModal({ ev, onClose, navigate }) {
           {/* Mô tả */}
           {ev.event_description && (
             <div style={{ marginBottom: 16, background: '#f8fafc', borderRadius: 10, padding: '11px 14px', fontSize: 13, color: '#475569', lineHeight: 1.7, borderLeft: `3px solid ${cfg.color}` }}>
-              {ev.event_description}
+              {translateDescription(ev.event_description)}
             </div>
           )}
 
@@ -138,12 +171,14 @@ function EventModal({ ev, onClose, navigate }) {
               <DiffBadges prev={ev.previous_state} next={ev.new_state} />
               {ev.changed_fields && Object.keys(ev.changed_fields).length > 0 && (
                 <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                  {Object.entries(ev.changed_fields).map(([k, v]) => (
-                    <div key={k} style={{ display: 'flex', gap: 10, fontSize: 12, padding: '6px 10px', background: '#f8fafc', borderRadius: 7 }}>
-                      <span style={{ color: '#94a3b8', minWidth: 140 }}>{fieldLabel(k)}</span>
-                      <span style={{ color: '#1a2744', fontWeight: 600 }}>{statusLabel(String(v))}</span>
-                    </div>
-                  ))}
+                  {Object.entries(ev.changed_fields)
+                    .filter(([k, v]) => !SKIP_DIFF_FIELDS.has(k) && typeof v !== 'object')
+                    .map(([k, v]) => (
+                      <div key={k} style={{ display: 'flex', gap: 10, fontSize: 12, padding: '6px 10px', background: '#f8fafc', borderRadius: 7 }}>
+                        <span style={{ color: '#94a3b8', minWidth: 140 }}>{fieldLabel(k)}</span>
+                        <span style={{ color: '#1a2744', fontWeight: 600 }}>{statusLabel(String(v))}</span>
+                      </div>
+                    ))}
                 </div>
               )}
             </div>
@@ -394,7 +429,7 @@ export default function LifecyclePage() {
                           {/* Mô tả */}
                           {ev.event_description && (
                             <div style={{ fontSize: 12, color: '#475569', marginBottom: 6, lineHeight: 1.55, background: '#fafafa', padding: '6px 10px', borderRadius: 7 }}>
-                              {ev.event_description}
+                              {translateDescription(ev.event_description)}
                             </div>
                           )}
 
