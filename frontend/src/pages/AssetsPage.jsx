@@ -526,6 +526,10 @@ function ExportModal({ onClose, currentFilters, visibleCols = [] }) {
       cols.forEach(c => params.append('columns', c))
       if (currentFilters.status) params.append('status', currentFilters.status)
       if (currentFilters.group_code) params.append('group_code', currentFilters.group_code)
+      if (currentFilters.asset_type_id) params.append('asset_type_id', currentFilters.asset_type_id)
+      if (currentFilters.location_id) params.append('location_id', currentFilters.location_id)
+      if (currentFilters.department_id) params.append('department_id', currentFilters.department_id)
+      if (currentFilters.q) params.append('q', currentFilters.q)
 
       const res = await importApi.get(`/assets/export?${params.toString()}`, { responseType: 'blob' })
       const url = URL.createObjectURL(res.data)
@@ -875,7 +879,7 @@ export default function AssetsPage() {
       {showExport && (
         <ExportModal
           onClose={() => setShowExport(false)}
-          currentFilters={{ status, group_code: groupCode }}
+          currentFilters={{ status, group_code: groupCode, location_id: locationId, q }}
           visibleCols={visibleCols}
         />
       )}

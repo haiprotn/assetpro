@@ -112,7 +112,9 @@ class AssetService:
 
         if q:
             where_parts.append(
-                "(a.name ILIKE :q OR a.asset_code ILIKE :q OR a.barcode ILIKE :q OR a.chassis_number ILIKE :q OR s.name ILIKE :q)"
+                "(a.name ILIKE :q OR a.asset_code ILIKE :q OR a.barcode ILIKE :q"
+                " OR a.chassis_number ILIKE :q OR a.engine_number ILIKE :q OR a.license_plate ILIKE :q"
+                " OR s.name ILIKE :q OR l.name ILIKE :q OR d.name ILIKE :q OR at2.name ILIKE :q OR atg.name ILIKE :q)"
             )
             params["q"] = f"%{q}%"
         if status:
@@ -435,8 +437,12 @@ class AssetService:
         db: AsyncSession,
         format: str = "xlsx",
         columns: Optional[List[str]] = None,
+        q: Optional[str] = None,
         status: Optional[str] = None,
         group_code: Optional[str] = None,
+        asset_type_id=None,
+        location_id=None,
+        department_id=None,
     ):
         import io
         import os
@@ -453,6 +459,18 @@ class AssetService:
         if group_code:
             where_clauses.append("atg.code = :group_code")
             params["group_code"] = group_code
+        if asset_type_id:
+            where_clauses.append("a.asset_type_id = :asset_type_id")
+            params["asset_type_id"] = str(asset_type_id)
+        if location_id:
+            where_clauses.append("a.current_location_id = :location_id")
+            params["location_id"] = str(location_id)
+        if department_id:
+            where_clauses.append("a.managing_department_id = :department_id")
+            params["department_id"] = str(department_id)
+        if q:
+            where_clauses.append("(a.name ILIKE :q OR a.asset_code ILIKE :q OR a.barcode ILIKE :q OR a.chassis_number ILIKE :q OR a.engine_number ILIKE :q OR a.license_plate ILIKE :q)")
+            params["q"] = f"%{q}%"
         where_sql = " AND ".join(where_clauses)
 
         stmt = text(f"""

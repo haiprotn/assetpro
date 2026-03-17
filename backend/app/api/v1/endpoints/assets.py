@@ -63,15 +63,21 @@ async def create_asset(
 @router.get("/export")
 async def export_assets(
     format: str = Query("xlsx", description="xlsx"),
+    q: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     group_code: Optional[str] = Query(None),
+    asset_type_id: Optional[uuid.UUID] = Query(None),
+    location_id: Optional[uuid.UUID] = Query(None),
+    department_id: Optional[uuid.UUID] = Query(None),
     columns: Optional[List[str]] = Query(None, description="Danh sách cột cần xuất"),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     """Export assets to Excel with optional column selection"""
     return await AssetService.export_assets(
-        db, format=format, status=status, group_code=group_code, columns=columns
+        db, format=format, q=q, status=status, group_code=group_code,
+        asset_type_id=asset_type_id, location_id=location_id,
+        department_id=department_id, columns=columns
     )
 
 
