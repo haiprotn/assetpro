@@ -232,11 +232,6 @@ export default function AssetFormPage() {
 
     p.dynamic_attributes = dynAttrs || {}
 
-    // Xóa ảnh: gửi null để backend clear field
-    if (isEdit && imgDeleted && !imgFile) {
-      p.asset_image_url = null
-    }
-
     return p
   }
 
@@ -254,7 +249,11 @@ export default function AssetFormPage() {
   const updateMutation = useMutation({
     mutationFn: (data) => assetApi.update(id, data),
     onSuccess: async () => {
-      if (imgFile) await doUploadImage(id)
+      if (imgDeleted && !imgFile) {
+        try { await assetApi.deleteImage(id) } catch {}
+      } else if (imgFile) {
+        await doUploadImage(id)
+      }
       qc.invalidateQueries(['assets'])
       qc.invalidateQueries(['asset', id])
       navigate(`/assets/${id}`)

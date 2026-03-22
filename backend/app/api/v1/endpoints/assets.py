@@ -8,12 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import select as sa_select
 from app.db.session import get_db
 from app.schemas.assets import (
     AssetCreate, AssetUpdate, AssetOut, AssetListOut
 )
 from app.services.asset_service import AssetService
 from app.core.auth import get_current_user
+from app.models.assets import Asset
 
 _UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "/app/uploads/assets")
 
@@ -189,6 +191,21 @@ async def upload_doc(
     with open(filepath, "wb") as f:
         f.write(content)
     return {"url": f"/uploads/docs/{unique_name}", "filename": file.filename, "size": len(content)}
+
+
+@router.delete("/{asset_id}/image", status_code=204)
+async def delete_image(
+    asset_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Xóa ảnh tài sản (set asset_image_url = NULL)"""
+    check = await db.execute(sa_select(Asset).where(Asset.id == asset_id))
+    orm_asset = check.scalar_one_or_none()
+    if not orm_asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    orm_asset.asset_image_url = None
+    await db.commit()
 
 
 @router.post("/{asset_id}/upload-image", response_model=AssetOut)
