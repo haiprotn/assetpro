@@ -129,9 +129,7 @@ export default function DepartmentsPage() {
       <PageHeader
         title="🏢 Quản lý Phòng ban"
         subtitle={`${depts.length} phòng ban trong hệ thống`}
-        actions={
-          {canManage && <Btn variant="primary" onClick={() => setModal({})}>+ Thêm phòng ban</Btn>}
-        }
+        actions={canManage && <Btn variant="primary" onClick={() => setModal({})}>+ Thêm phòng ban</Btn>}
       />
 
       <div style={{ padding: 24 }}>
