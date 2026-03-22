@@ -174,7 +174,8 @@ export default function AssetFormModal({ assetId, onClose, onSaved }) {
   const [dynAttrs, setDynAttrs] = useState({})
   const [errors, setErrors] = useState({})
   const [imgPreview, setImgPreview] = useState(null)
-  const [imgFile, setImgFile] = useState(null)
+  const imgFileRef = useRef(null)
+  const imgDeletedRef = useRef(false)
   const [uploading, setUploading] = useState(false)
   const [showAdd, setShowAdd] = useState('')
   const [addSaving, setAddSaving] = useState(false)
@@ -227,7 +228,7 @@ export default function AssetFormModal({ assetId, onClose, onSaved }) {
       condition_description: toStr(asset.condition_description),
       tags: Array.isArray(asset.tags) ? asset.tags.join(', ') : toStr(asset.tags),
     })
-    if (asset.asset_image_url) setImgPreview(`${IMG_HOST}${asset.asset_image_url}`)
+    if (asset.asset_image_url && !imgDeletedRef.current) setImgPreview(`${IMG_HOST}${asset.asset_image_url}`)
     if (asset.dynamic_attributes && typeof asset.dynamic_attributes === 'object') setDynAttrs(asset.dynamic_attributes)
   }, [asset])
 
@@ -279,50 +280,47 @@ export default function AssetFormModal({ assetId, onClose, onSaved }) {
   }
 
   const doUploadImage = async (id) => {
-    setUploading(true)
     try {
       const fd = new FormData()
-      fd.append('file', imgFile)
+      fd.append('file', imgFileRef.current)
       await assetApi.uploadImage(id, fd)
     } catch (e) {
       console.warn('Image upload failed', e)
-    } finally {
-      setUploading(false)
     }
   }
 
-  const createMutation = useMutation({
-    mutationFn: (data) => assetApi.create(data),
-    onSuccess: async (res) => {
-      const newId = res.data.id
-      if (imgFile) await doUploadImage(newId)
-      qc.invalidateQueries(['assets'])
-      onSaved?.(res.data)
-      onClose()
-    },
-    onError: (e) => alert('Lỗi: ' + (e.response?.data?.detail || e.message)),
-  })
+  const [saving, setSaving] = useState(false)
 
-  const updateMutation = useMutation({
-    mutationFn: (data) => assetApi.update(assetId, data),
-    onSuccess: async (res) => {
-      if (imgFile) await doUploadImage(assetId)
-      qc.invalidateQueries(['assets'])
-      qc.invalidateQueries(['asset', assetId])
-      onSaved?.(res.data)
-      onClose()
-    },
-    onError: (e) => alert('Lỗi: ' + (e.response?.data?.detail || e.message)),
-  })
-
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validate()) return
     const payload = buildPayload()
-    if (isEdit) updateMutation.mutate(payload)
-    else createMutation.mutate(payload)
+    setSaving(true)
+    try {
+      if (isEdit) {
+        const res = await assetApi.update(assetId, payload)
+        if (imgDeletedRef.current && !imgFileRef.current) {
+          await assetApi.deleteImage(assetId)
+        } else if (imgFileRef.current) {
+          await doUploadImage(assetId)
+        }
+        qc.invalidateQueries(['assets'])
+        qc.invalidateQueries(['asset', assetId])
+        onSaved?.(res.data)
+        onClose()
+      } else {
+        const res = await assetApi.create(payload)
+        const newId = res.data.id
+        if (imgFileRef.current) await doUploadImage(newId)
+        qc.invalidateQueries(['assets'])
+        onSaved?.(res.data)
+        onClose()
+      }
+    } catch (e) {
+      alert('Lỗi: ' + (e.response?.data?.detail || e.message))
+    } finally {
+      setSaving(false)
+    }
   }
-
-  const saving = createMutation.isPending || updateMutation.isPending || uploading
 
   // Đóng khi click backdrop
   const handleBackdrop = (e) => {
@@ -405,7 +403,14 @@ export default function AssetFormModal({ assetId, onClose, onSaved }) {
                     {imgPreview ? '🔄 Đổi ảnh' : '📤 Chọn ảnh'}
                   </Btn>
                   {imgPreview && (
-                    <Btn variant="ghost" size="sm" style={{ marginLeft: 8 }} onClick={() => { setImgPreview(null); setImgFile(null) }}>
+                    <Btn variant="ghost" size="sm" style={{ marginLeft: 8 }} onClick={async () => {
+                      setImgPreview(null)
+                      imgFileRef.current = null
+                      imgDeletedRef.current = true
+                      if (isEdit && assetId) {
+                        try { await assetApi.deleteImage(assetId) } catch {}
+                      }
+                    }}>
                       🗑️ Xoá
                     </Btn>
                   )}
@@ -413,7 +418,7 @@ export default function AssetFormModal({ assetId, onClose, onSaved }) {
                 </div>
                 <input ref={imgRef} type="file" accept="image/*" onChange={e => {
                   const f = e.target.files?.[0]
-                  if (f) { setImgFile(f); setImgPreview(URL.createObjectURL(f)) }
+                  if (f) { imgFileRef.current = f; imgDeletedRef.current = false; setImgPreview(URL.createObjectURL(f)) }
                 }} style={{ display: 'none' }} />
               </div>
             </Card>
