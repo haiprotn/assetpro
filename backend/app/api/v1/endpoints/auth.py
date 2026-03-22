@@ -65,4 +65,5 @@ async def login(
         "token_type": "bearer",
         "role": user.role,
         "username": user.username,
+        "permissions": user.permissions or {},
     }

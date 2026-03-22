@@ -2,6 +2,16 @@ import { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 
+// Map nav item -> module permission cần có để hiển thị
+const NAV_PERMS = {
+  '/dashboard':   { module: 'Tổng quan',   action: 'xem' },
+  '/assets':      { module: 'Tài sản',     action: 'xem' },
+  '/transfers':   { module: 'Điều chuyển', action: 'xem' },
+  '/maintenance': { module: 'Bảo trì',     action: 'xem' },
+  '/lifecycle':   { module: 'Lịch sử',     action: 'xem' },
+  '/config':      { module: 'Cấu hình',    action: 'toàn quyền' },
+}
+
 const NAV = [
   { to: '/dashboard',   icon: '📊', label: 'Tổng quan' },
   { to: '/assets',      icon: '📦', label: 'Tài sản' },
@@ -23,7 +33,7 @@ const ROLE_LABEL = {
 }
 
 export default function Layout() {
-  const { logout, user } = useAuthStore()
+  const { logout, user, hasPermission } = useAuthStore()
   const navigate = useNavigate()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -94,8 +104,13 @@ export default function Layout() {
 
         {/* Nav */}
         <nav style={{ padding: '10px 8px', flex: 1, overflowY: 'auto' }}>
-          {NAV.map((item, i) =>
-            item.separator ? (
+          {NAV.map((item, i) => {
+            // Ẩn nav item nếu user không có quyền xem module tương ứng
+            if (!item.separator && NAV_PERMS[item.to]) {
+              const { module, action } = NAV_PERMS[item.to]
+              if (!hasPermission(module, action)) return null
+            }
+            return item.separator ? (
               <div key={`sep-${i}`} style={{ height: 1, background: 'rgba(255,255,255,0.1)', margin: '6px 4px' }} />
             ) : (
               <NavLink key={item.to} to={item.to} style={({ isActive }) => ({
@@ -110,7 +125,7 @@ export default function Layout() {
                 {item.label}
               </NavLink>
             )
-          )}
+          })}
         </nav>
 
         {/* User */}

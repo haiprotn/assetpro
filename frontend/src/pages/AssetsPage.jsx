@@ -5,6 +5,7 @@ import axios from 'axios'
 import { assetApi, assetTypeApi, assetTypeGroupApi, locationApi } from '../services/api'
 import { Card, PageHeader, StatusBadge, Btn, fmtVnd, DynAttrBadges, Spinner } from '../components/ui'
 import AssetFormModal from './AssetFormModal'
+import { useAuthStore } from '../store/authStore'
 
 const BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001/api/v1'
 const IMG_HOST = BASE.replace('/api/v1', '')
@@ -786,6 +787,7 @@ function AssetCell({ colKey, asset, onImageClick }) {
 export default function AssetsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { hasPermission } = useAuthStore()
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
@@ -896,15 +898,21 @@ export default function AssetsPage() {
         subtitle={`${total} tài sản trong hệ thống`}
         actions={
           <>
-            <Btn variant="outline" onClick={() => setShowImport(true)}>
-              📥 Import Excel
-            </Btn>
-            <Btn variant="outline" onClick={() => setShowExport(true)}>
-              📤 Xuất Excel
-            </Btn>
-            <Btn variant="primary" onClick={() => setFormModal('new')}>
-              + Thêm tài sản
-            </Btn>
+            {hasPermission('Tài sản', 'tạo') && (
+              <Btn variant="outline" onClick={() => setShowImport(true)}>
+                📥 Import Excel
+              </Btn>
+            )}
+            {hasPermission('Báo cáo', 'xuất file') && (
+              <Btn variant="outline" onClick={() => setShowExport(true)}>
+                📤 Xuất Excel
+              </Btn>
+            )}
+            {hasPermission('Tài sản', 'tạo') && (
+              <Btn variant="primary" onClick={() => setFormModal('new')}>
+                + Thêm tài sản
+              </Btn>
+            )}
           </>
         }
       />
@@ -998,21 +1006,27 @@ export default function AssetsPage() {
                           onClick={e => { e.stopPropagation(); navigate(`/assets/${a.id}`) }}>
                           Chi tiết
                         </Btn>
-                        <Btn variant="ghost" size="sm"
-                          onClick={e => { e.stopPropagation(); setFormModal(a.id) }}
-                          style={{ marginLeft: 4 }}>
-                          ✏️
-                        </Btn>
-                        <Btn variant="ghost" size="sm"
-                          onClick={e => { e.stopPropagation(); cloneMutation.mutate(a.id) }}
-                          style={{ marginLeft: 4 }} title="Nhân bản tài sản">
-                          📋
-                        </Btn>
-                        <Btn variant="ghost" size="sm"
-                          onClick={e => handleDelete(e, a)}
-                          style={{ marginLeft: 4, color: '#ef4444' }}>
-                          🗑️
-                        </Btn>
+                        {hasPermission('Tài sản', 'sửa') && (
+                          <Btn variant="ghost" size="sm"
+                            onClick={e => { e.stopPropagation(); setFormModal(a.id) }}
+                            style={{ marginLeft: 4 }}>
+                            ✏️
+                          </Btn>
+                        )}
+                        {hasPermission('Tài sản', 'tạo') && (
+                          <Btn variant="ghost" size="sm"
+                            onClick={e => { e.stopPropagation(); cloneMutation.mutate(a.id) }}
+                            style={{ marginLeft: 4 }} title="Nhân bản tài sản">
+                            📋
+                          </Btn>
+                        )}
+                        {hasPermission('Tài sản', 'xóa') && (
+                          <Btn variant="ghost" size="sm"
+                            onClick={e => handleDelete(e, a)}
+                            style={{ marginLeft: 4, color: '#ef4444' }}>
+                            🗑️
+                          </Btn>
+                        )}
                       </td>
                     </tr>
                   ))}

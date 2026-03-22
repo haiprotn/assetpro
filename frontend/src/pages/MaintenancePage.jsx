@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { maintenanceApi, assetApi } from '../services/api'
 import { Card, PageHeader, StatusBadge, Btn, fmtVnd, fmtDate, Spinner } from '../components/ui'
 import toast from 'react-hot-toast'
+import { useAuthStore } from '../store/authStore'
 
 const TYPE_MAP = {
   SCHEDULED:   { label: 'Bảo dưỡng định kỳ',       color: '#3b82f6' },
@@ -482,6 +483,7 @@ function CompleteModal({ record, onClose, onSave }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function MaintenancePage() {
   const qc = useQueryClient()
+  const { hasPermission } = useAuthStore()
   const [filterStatus, setFilterStatus] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [completing, setCompleting] = useState(null)
@@ -516,7 +518,7 @@ export default function MaintenancePage() {
 
       <PageHeader
         title="Bảo trì & Sửa chữa"
-        actions={<Btn variant="primary" onClick={() => setShowCreate(true)}>+ Tạo phiếu</Btn>}
+        actions={hasPermission('Bảo trì', 'tạo') && <Btn variant="primary" onClick={() => setShowCreate(true)}>+ Tạo phiếu</Btn>}
       />
 
       <div style={{ padding: 24 }}>
@@ -594,10 +596,10 @@ export default function MaintenancePage() {
                       <td style={{ padding: '10px 14px' }}>
                         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                           <Btn variant="ghost" size="sm" onClick={() => setViewing(r)}>Chi tiết</Btn>
-                          {!isDone && (
+                          {!isDone && hasPermission('Bảo trì', 'hoàn tất') && (
                             <Btn variant="primary" size="sm" onClick={() => setCompleting(r)}>Hoàn thành</Btn>
                           )}
-                          {!isDone && (
+                          {!isDone && hasPermission('Bảo trì', 'hủy') && (
                             <Btn variant="outline" size="sm"
                               style={{ color: '#dc2626', borderColor: '#fecaca' }}
                               onClick={() => window.confirm('Huỷ phiếu bảo trì này?') && cancelMutation.mutate(r.id)}>

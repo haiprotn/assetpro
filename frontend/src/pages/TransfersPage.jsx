@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { transferApi } from '../services/api'
 import { Card, PageHeader, StatusBadge, Btn, fmtDate, Spinner } from '../components/ui'
 import toast from 'react-hot-toast'
+import { useAuthStore } from '../store/authStore'
 
 const QRConfirmModal = ({ order, onClose }) => {
   const qc = useQueryClient()
@@ -74,6 +75,7 @@ const QRConfirmModal = ({ order, onClose }) => {
 export default function TransfersPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { hasPermission } = useAuthStore()
   const [qrModal, setQrModal] = useState(null)
   const [filterStatus, setFilterStatus] = useState('')
 
@@ -104,7 +106,7 @@ export default function TransfersPage() {
     <div>
       <PageHeader
         title="🔄 Quản lý điều chuyển tài sản"
-        actions={<Btn variant="primary" onClick={() => navigate('/transfers/new')}>+ Tạo phiếu mới</Btn>}
+        actions={hasPermission('Điều chuyển', 'tạo') && <Btn variant="primary" onClick={() => navigate('/transfers/new')}>+ Tạo phiếu mới</Btn>}
       />
       <div style={{ padding: 24 }}>
         {/* Summary cards */}
@@ -163,10 +165,10 @@ export default function TransfersPage() {
                     <td style={{ padding: '11px 14px' }}>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <Btn variant="ghost" size="sm" onClick={() => navigate(`/transfers/${order.id}`)}>Xem</Btn>
-                        {(order.status === 'DRAFT' || order.status === 'PENDING_APPROVAL') && (
+                        {hasPermission('Điều chuyển', 'duyệt') && (order.status === 'DRAFT' || order.status === 'PENDING_APPROVAL') && (
                           <Btn variant="primary" size="sm" onClick={() => approve(order.id)}>✅ Duyệt</Btn>
                         )}
-                        {order.status === 'APPROVED' && (
+                        {hasPermission('Điều chuyển', 'duyệt') && order.status === 'APPROVED' && (
                           <Btn variant="accent" size="sm" onClick={() => dispatch(order.id)}>Xuất kho</Btn>
                         )}
                         {(order.status === 'IN_TRANSIT' || order.status === 'PENDING_QR_CONFIRM') && (

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { locationApi } from '../services/api'
 import { Card, PageHeader, Btn } from '../components/ui'
+import toast from 'react-hot-toast'
 
 const inp = {
   width: '100%', padding: '8px 10px', borderRadius: 7,
@@ -68,20 +69,20 @@ export default function LocationPage() {
 
   const createMut = useMutation({
     mutationFn: (data) => locationApi.create(data),
-    onSuccess: () => { qc.invalidateQueries(['locations']); setShowAdd(false) },
-    onError: (e) => alert('Lỗi: ' + (e.response?.data?.detail || e.message)),
+    onSuccess: () => { qc.invalidateQueries(['locations']); setShowAdd(false); toast.success('Đã thêm vị trí') },
+    onError: (e) => toast.error('Lỗi: ' + (e.response?.data?.detail || e.message)),
   })
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }) => locationApi.update(id, data),
-    onSuccess: () => { qc.invalidateQueries(['locations']); setEditId(null) },
-    onError: (e) => alert('Lỗi: ' + (e.response?.data?.detail || e.message)),
+    onSuccess: () => { qc.invalidateQueries(['locations']); setEditId(null); toast.success('Đã cập nhật vị trí') },
+    onError: (e) => toast.error('Lỗi: ' + (e.response?.data?.detail || e.message)),
   })
 
   const deleteMut = useMutation({
     mutationFn: (id) => locationApi.delete(id),
-    onSuccess: () => qc.invalidateQueries(['locations']),
-    onError: (e) => alert('Lỗi: ' + (e.response?.data?.detail || e.message)),
+    onSuccess: () => { qc.invalidateQueries(['locations']); toast.success('Đã xoá vị trí') },
+    onError: (e) => toast.error('Lỗi: ' + (e.response?.data?.detail || e.message)),
   })
 
   const filtered = locations.filter(l =>
@@ -151,7 +152,7 @@ export default function LocationPage() {
                         <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
                           <Btn variant="ghost" size="sm" onClick={() => { setEditId(loc.id); setShowAdd(false) }}>✏️</Btn>
                           <Btn variant="ghost" size="sm" style={{ color: '#ef4444', marginLeft: 4 }}
-                            onClick={() => window.confirm(`Xoá vị trí "${loc.name}"?`) && deleteMut.mutate(loc.id)}>
+                            onClick={() => { if (window.confirm(`Xoá vị trí "${loc.name}"?`)) deleteMut.mutate(loc.id) }}>
                             🗑️
                           </Btn>
                         </td>
