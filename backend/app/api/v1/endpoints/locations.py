@@ -41,6 +41,8 @@ async def list_locations(db=Depends(get_db), current_user=Depends(get_current_us
 @router.post("", status_code=201)
 async def create_location(data: LocationCreate, db=Depends(get_db), current_user=Depends(get_current_user)):
     code = data.code.strip().upper() if data.code else _to_code(data.name)
+    if not code:
+        code = str(uuid.uuid4())[:8].upper()
     existing = (await db.execute(select(Location).where(Location.code == code))).scalar_one_or_none()
     if existing:
         raise HTTPException(400, f"Mã vị trí '{code}' đã tồn tại")
