@@ -259,16 +259,16 @@ async def preview_import(
     new_locs: dict = {}
     new_sups: dict = {}
     new_types: dict = {}
-    to_import = to_skip = 0
+    to_import = to_update = to_skip = 0
 
     for row in rows[1:]:
         r = dict(zip(headers, row))
         code = str(r.get('Mã TS') or '').strip()
         name = str(r.get('Tên tài sản') or '').strip()
         if not code or not name:
-            continue
-        if code in existing_codes:
             to_skip += 1; continue
+        if code in existing_codes:
+            to_update += 1; continue
         to_import += 1
 
         for field, cache, store in [
@@ -295,6 +295,7 @@ async def preview_import(
         'status_counts':   dict(status_count),
         'samples':         samples,
         'to_import':       to_import,
+        'to_update':       to_update,
         'to_skip':         to_skip,
         'new_departments': [{'name': k, 'code': v} for k, v in new_depts.items()],
         'new_locations':   [{'name': k, 'code': v} for k, v in new_locs.items()],
@@ -392,7 +393,7 @@ async def execute_import(
     res = await db.execute(text("SELECT asset_code FROM assets"))
     existing = {r[0] for r in res.fetchall()}
 
-    imported = skipped = images_saved = 0
+    imported = updated = skipped = images_saved = 0
     errors = []
 
     for idx, r in enumerate(data_rows, start=2):
@@ -400,7 +401,9 @@ async def execute_import(
             code = str(r.get('Mã TS') or '').strip()
             name = str(r.get('Tên tài sản') or '').strip()
             if not code or not name: skipped += 1; continue
-            if code in existing: skipped += 1; continue
+
+            is_update = code in existing
+            existing.add(code)  # prevent duplicate rows in same file
 
             loc_id  = await get_location(r.get('Vị trí tài sản'))
             dept_id = await get_dept(r.get('Phòng ban quản lý'))
@@ -411,7 +414,8 @@ async def execute_import(
             )
             at_id   = await get_asset_type(r.get('Loại TS') or r.get('Loại tài sản'))
 
-            status = STATUS_MAP.get(str(r.get('Trạng thái') or '').strip(), 'PENDING_ALLOCATION')
+            status_raw = str(r.get('Trạng thái') or '').strip()
+            status = STATUS_MAP.get(status_raw, 'PENDING_ALLOCATION') if status_raw else None
 
             nam_ns = str(r.get('Năm sản xuất - Nước sản xuất') or '').strip()
             year_mfg = _extract_year(nam_ns) if nam_ns and nam_ns != 'None' else None
@@ -443,7 +447,49 @@ async def execute_import(
             tags_list = [t.strip() for t in re.split(r'[,;]+', tags_raw) if t.strip()] if tags_raw and tags_raw != 'None' else []
             tags_pg = ('{' + ','.join('"' + t.replace('"', '\\"') + '"' for t in tags_list) + '}') if tags_list else None
 
-            new_id = str(uuid.uuid4())
+            orig_val   = _safe_float(r.get('Nguyên giá'))
+            purch_price = _safe_float(r.get('Giá mua'))
+            loan_amt   = _safe_float(r.get('Đã vay'))
+            dep_months = _safe_int(r.get('Khấu hao (tháng)'))
+            warranty_months = _safe_int(r.get('Thời gian BH (tháng)'))
+            qty        = max(1, _safe_int(r.get('Số lượng'), 1))
+
+            params = {
+                'id': str(uuid.uuid4()), 'code': code,
+                'barcode': str(r.get('Barcode') or '')[:100] or None,
+                'name': name,
+                'le_id': le_id, 'at_id': at_id,
+                'dept_id': dept_id, 'loc_id': loc_id, 'sup_id': sup_id,
+                'model': str(r.get('Model / Series') or '')[:200] or None,
+                'year': year_mfg, 'country': country_mfg,
+                'orig_val': orig_val,
+                'purch_price': purch_price,
+                'purch_date': _parse_date(r.get('Ngày mua')),
+                'report_date': _parse_date(r.get('Ngày báo tăng')),
+                'warranty_end': _parse_date(r.get('Ngày kết thúc BH')),
+                'warranty_months': warranty_months,
+                'expiry_date': _parse_date(r.get('Ngày hết hạn')),
+                'dep_months': dep_months,
+                'loan_amt': loan_amt,
+                'qty': qty,
+                'qty_alloc': _safe_int(r.get('SL đã cấp phát')),
+                'qty_recv': _safe_int(r.get('SL thu hồi')),
+                'qty_maint': _safe_int(r.get('SL Bảo trì, Sửa chữa')),
+                'qty_liq': _safe_int(r.get('SL thanh lý')),
+                'qty_lost': _safe_int(r.get('SL mất')),
+                'qty_cancel': _safe_int(r.get('SL huỷ')),
+                'qty_broken': _safe_int(r.get('SL hỏng')),
+                'status': status or 'PENDING_ALLOCATION',
+                'chassis': str(r.get('Số Khung') or '')[:100] or None,
+                'engine': str(r.get('Số động cơ') or '')[:100] or None,
+                'reg_expiry': _parse_date(r.get('Hạn đăng kiểm')),
+                'description': str(r.get('Mô tả') or '')[:500] or None,
+                'condition_desc': str(r.get('Diễn giải tình trạng') or '')[:500] or None,
+                'image_url': image_url,
+                'tags': tags_pg,
+                'dyn_attrs': json.dumps(dyn, ensure_ascii=False),
+            }
+
             await db.execute(text("""
                 INSERT INTO assets (
                     id, asset_code, barcode, name,
@@ -473,44 +519,40 @@ async def execute_import(
                     :chassis, :engine, :reg_expiry,
                     :description, :condition_desc, :image_url,
                     CAST(:tags AS text[]), CAST(:dyn_attrs AS jsonb)
-                ) ON CONFLICT (asset_code) DO NOTHING
-            """), {
-                'id': new_id, 'code': code,
-                'barcode': str(r.get('Barcode') or '')[:100] or None,
-                'name': name,
-                'le_id': le_id, 'at_id': at_id,
-                'dept_id': dept_id, 'loc_id': loc_id, 'sup_id': sup_id,
-                'model': str(r.get('Model / Series') or '')[:200] or None,
-                'year': year_mfg, 'country': country_mfg,
-                'orig_val': _safe_float(r.get('Nguyên giá')),
-                'purch_price': _safe_float(r.get('Giá mua')),
-                'purch_date': _parse_date(r.get('Ngày mua')),
-                'report_date': _parse_date(r.get('Ngày báo tăng')),
-                'warranty_end': _parse_date(r.get('Ngày kết thúc BH')),
-                'warranty_months': _safe_int(r.get('Thời gian BH (tháng)')),
-                'expiry_date': _parse_date(r.get('Ngày hết hạn')),
-                'dep_months': _safe_int(r.get('Khấu hao (tháng)')),
-                'loan_amt': _safe_float(r.get('Đã vay')),
-                'qty': max(1, _safe_int(r.get('Số lượng'), 1)),
-                'qty_alloc': _safe_int(r.get('SL đã cấp phát')),
-                'qty_recv': _safe_int(r.get('SL thu hồi')),
-                'qty_maint': _safe_int(r.get('SL Bảo trì, Sửa chữa')),
-                'qty_liq': _safe_int(r.get('SL thanh lý')),
-                'qty_lost': _safe_int(r.get('SL mất')),
-                'qty_cancel': _safe_int(r.get('SL huỷ')),
-                'qty_broken': _safe_int(r.get('SL hỏng')),
-                'status': status,
-                'chassis': str(r.get('Số Khung') or '')[:100] or None,
-                'engine': str(r.get('Số động cơ') or '')[:100] or None,
-                'reg_expiry': _parse_date(r.get('Hạn đăng kiểm')),
-                'description': str(r.get('Mô tả') or '')[:500] or None,
-                'condition_desc': str(r.get('Diễn giải tình trạng') or '')[:500] or None,
-                'image_url': image_url,
-                'tags': tags_pg,
-                'dyn_attrs': json.dumps(dyn, ensure_ascii=False),
-            })
-            existing.add(code)
-            imported += 1
+                ) ON CONFLICT (asset_code) DO UPDATE SET
+                    name                   = EXCLUDED.name,
+                    status                 = EXCLUDED.status,
+                    barcode                = COALESCE(EXCLUDED.barcode,                assets.barcode),
+                    asset_type_id          = COALESCE(EXCLUDED.asset_type_id,          assets.asset_type_id),
+                    managing_department_id = COALESCE(EXCLUDED.managing_department_id, assets.managing_department_id),
+                    current_location_id    = COALESCE(EXCLUDED.current_location_id,    assets.current_location_id),
+                    supplier_id            = COALESCE(EXCLUDED.supplier_id,            assets.supplier_id),
+                    model_series           = COALESCE(EXCLUDED.model_series,           assets.model_series),
+                    year_manufactured      = COALESCE(EXCLUDED.year_manufactured,      assets.year_manufactured),
+                    country_manufactured   = COALESCE(EXCLUDED.country_manufactured,   assets.country_manufactured),
+                    original_value         = CASE WHEN EXCLUDED.original_value > 0    THEN EXCLUDED.original_value    ELSE assets.original_value END,
+                    purchase_price         = CASE WHEN EXCLUDED.purchase_price > 0    THEN EXCLUDED.purchase_price    ELSE assets.purchase_price END,
+                    loan_amount            = CASE WHEN EXCLUDED.loan_amount > 0        THEN EXCLUDED.loan_amount        ELSE assets.loan_amount END,
+                    depreciation_months    = CASE WHEN EXCLUDED.depreciation_months > 0 THEN EXCLUDED.depreciation_months ELSE assets.depreciation_months END,
+                    warranty_months        = CASE WHEN EXCLUDED.warranty_months > 0   THEN EXCLUDED.warranty_months   ELSE assets.warranty_months END,
+                    purchase_date          = COALESCE(EXCLUDED.purchase_date,          assets.purchase_date),
+                    report_increase_date   = COALESCE(EXCLUDED.report_increase_date,   assets.report_increase_date),
+                    warranty_end_date      = COALESCE(EXCLUDED.warranty_end_date,      assets.warranty_end_date),
+                    expiry_date            = COALESCE(EXCLUDED.expiry_date,            assets.expiry_date),
+                    chassis_number         = COALESCE(EXCLUDED.chassis_number,         assets.chassis_number),
+                    engine_number          = COALESCE(EXCLUDED.engine_number,          assets.engine_number),
+                    registration_expiry    = COALESCE(EXCLUDED.registration_expiry,    assets.registration_expiry),
+                    description            = COALESCE(EXCLUDED.description,            assets.description),
+                    condition_description  = COALESCE(EXCLUDED.condition_description,  assets.condition_description),
+                    asset_image_url        = COALESCE(EXCLUDED.asset_image_url,        assets.asset_image_url),
+                    tags                   = CASE WHEN EXCLUDED.tags IS NOT NULL       THEN EXCLUDED.tags               ELSE assets.tags END,
+                    dynamic_attributes     = CASE WHEN EXCLUDED.dynamic_attributes != '{}'::jsonb THEN EXCLUDED.dynamic_attributes ELSE assets.dynamic_attributes END
+            """), params)
+
+            if is_update:
+                updated += 1
+            else:
+                imported += 1
 
         except Exception as e:
             errors.append(f"Dòng {idx} ({r.get('Mã TS','?')}): {str(e)[:120]}")
@@ -521,10 +563,11 @@ async def execute_import(
     return {
         'success': True,
         'imported': imported,
+        'updated': updated,
         'skipped': skipped,
         'images_saved': images_saved,
         'errors': errors,
-        'message': f'✅ Import {imported} tài sản, {images_saved} ảnh, bỏ qua {skipped} trùng.',
+        'message': f'✅ Thêm mới {imported}, cập nhật {updated} tài sản, {images_saved} ảnh, bỏ qua {skipped} dòng trống.',
     }
 
 

@@ -193,8 +193,10 @@ export default function ImportPage() {
               </table>
             </div>
 
-            <div style={{ marginTop: 16, padding: '10px 14px', background: '#fef3c7', borderRadius: 8, fontSize: 13, color: '#92400e' }}>
-              ⚠️ Tài sản có Mã TS đã tồn tại sẽ bị bỏ qua (không ghi đè).
+            <div style={{ marginTop: 16, padding: '10px 14px', background: '#d1fae5', borderRadius: 8, fontSize: 13, color: '#065f46' }}>
+              ✅ <strong>{preview.to_import || 0}</strong> tài sản mới sẽ được thêm •{' '}
+              <strong>{preview.to_update || 0}</strong> tài sản đã có sẽ được <em>cập nhật</em> (chỉ ghi đè trường có dữ liệu) •{' '}
+              <strong>{preview.to_skip || 0}</strong> dòng bỏ qua (thiếu mã/tên)
             </div>
 
             <div style={{ marginTop: 14 }}>
@@ -234,9 +236,10 @@ export default function ImportPage() {
 
             <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
               {[
-                { label: 'Tài sản import', value: result.imported, color: '#15803d', bg: '#dcfce7' },
+                { label: 'Thêm mới', value: result.imported, color: '#15803d', bg: '#dcfce7' },
+                { label: 'Cập nhật', value: result.updated || 0, color: '#0369a1', bg: '#e0f2fe' },
                 { label: 'Ảnh đã lưu', value: result.images_saved, color: '#5b21b6', bg: '#ede9fe' },
-                { label: 'Bỏ qua (trùng)', value: result.skipped, color: '#b45309', bg: '#fef3c7' },
+                { label: 'Bỏ qua', value: result.skipped, color: '#b45309', bg: '#fef3c7' },
                 { label: 'Lỗi', value: result.errors?.length || 0, color: '#b91c1c', bg: '#fee2e2' },
               ].map(s => (
                 <div key={s.label} style={{ padding: '14px 20px', background: s.bg, borderRadius: 10, minWidth: 120 }}>
