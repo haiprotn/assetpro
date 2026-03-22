@@ -115,6 +115,7 @@ class AssetUpdate(BaseModel):
     description: Optional[str] = None
     tags: Optional[List[str]] = None
     dynamic_attributes: Optional[Dict[str, Any]] = None
+    asset_image_url: Optional[str] = None
 
 
 class AssetOut(AssetBase):

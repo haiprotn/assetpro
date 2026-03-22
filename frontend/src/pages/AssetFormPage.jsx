@@ -118,6 +118,7 @@ export default function AssetFormPage() {
   const [errors, setErrors] = useState({})
   const [imgPreview, setImgPreview] = useState(null)
   const [imgFile, setImgFile] = useState(null)
+  const [imgDeleted, setImgDeleted] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [showAdd, setShowAdd] = useState('')
   const [addSaving, setAddSaving] = useState(false)
@@ -231,6 +232,11 @@ export default function AssetFormPage() {
 
     p.dynamic_attributes = dynAttrs || {}
 
+    // Xóa ảnh: gửi null để backend clear field
+    if (isEdit && imgDeleted && !imgFile) {
+      p.asset_image_url = null
+    }
+
     return p
   }
 
@@ -281,6 +287,7 @@ export default function AssetFormPage() {
     if (!f) return
     setImgFile(f)
     setImgPreview(URL.createObjectURL(f))
+    setImgDeleted(false)
   }
 
   if (isEdit && isLoading) return <Spinner />
@@ -326,7 +333,7 @@ export default function AssetFormPage() {
                 {imgPreview ? '🔄 Đổi ảnh' : '📤 Chọn ảnh'}
               </Btn>
               {imgPreview && (
-                <Btn variant="ghost" size="sm" style={{ marginLeft: 8 }} onClick={() => { setImgPreview(null); setImgFile(null) }}>
+                <Btn variant="ghost" size="sm" style={{ marginLeft: 8 }} onClick={() => { setImgPreview(null); setImgFile(null); setImgDeleted(true) }}>
                   🗑️ Xoá
                 </Btn>
               )}
