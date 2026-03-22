@@ -175,7 +175,7 @@ export default function AssetFormPage() {
       // find group for this type
       setGroupId('') // will reload when groups load
     }
-    if (asset.asset_image_url) {
+    if (asset.asset_image_url && !imgDeletedRef.current) {
       setImgPreview(`${IMG_HOST}${asset.asset_image_url}`)
     }
     if (asset.dynamic_attributes && typeof asset.dynamic_attributes === 'object') {
@@ -324,7 +324,14 @@ export default function AssetFormPage() {
                 {imgPreview ? '🔄 Đổi ảnh' : '📤 Chọn ảnh'}
               </Btn>
               {imgPreview && (
-                <Btn variant="ghost" size="sm" style={{ marginLeft: 8 }} onClick={() => { setImgPreview(null); imgFileRef.current = null; imgDeletedRef.current = true }}>
+                <Btn variant="ghost" size="sm" style={{ marginLeft: 8 }} onClick={async () => {
+                  setImgPreview(null)
+                  imgFileRef.current = null
+                  imgDeletedRef.current = true
+                  if (isEdit && asset?.id) {
+                    try { await assetApi.deleteImage(asset.id) } catch {}
+                  }
+                }}>
                   🗑️ Xoá
                 </Btn>
               )}
