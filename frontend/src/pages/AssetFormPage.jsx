@@ -117,9 +117,8 @@ export default function AssetFormPage() {
   const [dynAttrs, setDynAttrs] = useState({})   // dynamic_attributes values
   const [errors, setErrors] = useState({})
   const [imgPreview, setImgPreview] = useState(null)
-  const [imgFile, setImgFile] = useState(null)
-  const [imgDeleted, setImgDeleted] = useState(false)
-  const [uploading, setUploading] = useState(false)
+  const imgFileRef = useRef(null)      // dùng ref để tránh stale closure
+  const imgDeletedRef = useRef(false)  // dùng ref để tránh stale closure
   const [showAdd, setShowAdd] = useState('')
   const [addSaving, setAddSaving] = useState(false)
 
@@ -235,63 +234,56 @@ export default function AssetFormPage() {
     return p
   }
 
-  const createMutation = useMutation({
-    mutationFn: (data) => assetApi.create(data),
-    onSuccess: async (res) => {
-      const newId = res.data.id
-      if (imgFile) await doUploadImage(newId)
-      qc.invalidateQueries(['assets'])
-      navigate(`/assets/${newId}`)
-    },
-    onError: (e) => alert('Lỗi: ' + (e.response?.data?.detail || e.message)),
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: (data) => assetApi.update(id, data),
-    onSuccess: async () => {
-      if (imgDeleted && !imgFile) {
-        try { await assetApi.deleteImage(id) } catch {}
-      } else if (imgFile) {
-        await doUploadImage(id)
-      }
-      qc.invalidateQueries(['assets'])
-      qc.invalidateQueries(['asset', id])
-      navigate(`/assets/${id}`)
-    },
-    onError: (e) => alert('Lỗi: ' + (e.response?.data?.detail || e.message)),
-  })
+  const [saving, setSaving] = useState(false)
 
   const doUploadImage = async (assetId) => {
-    setUploading(true)
     try {
       const fd = new FormData()
-      fd.append('file', imgFile)
+      fd.append('file', imgFileRef.current)
       await assetApi.uploadImage(assetId, fd)
     } catch (e) {
       console.warn('Image upload failed', e)
-    } finally {
-      setUploading(false)
     }
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validate()) return
     const payload = buildPayload()
-    if (isEdit) updateMutation.mutate(payload)
-    else createMutation.mutate(payload)
+    setSaving(true)
+    try {
+      if (isEdit) {
+        await assetApi.update(id, payload)
+        if (imgDeletedRef.current && !imgFileRef.current) {
+          await assetApi.deleteImage(id)
+        } else if (imgFileRef.current) {
+          await doUploadImage(id)
+        }
+        qc.invalidateQueries(['assets'])
+        qc.invalidateQueries(['asset', id])
+        navigate(`/assets/${id}`)
+      } else {
+        const res = await assetApi.create(payload)
+        const newId = res.data.id
+        if (imgFileRef.current) await doUploadImage(newId)
+        qc.invalidateQueries(['assets'])
+        navigate(`/assets/${newId}`)
+      }
+    } catch (e) {
+      alert('Lỗi: ' + (e.response?.data?.detail || e.message))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleImgChange = (e) => {
     const f = e.target.files?.[0]
     if (!f) return
-    setImgFile(f)
+    imgFileRef.current = f
+    imgDeletedRef.current = false
     setImgPreview(URL.createObjectURL(f))
-    setImgDeleted(false)
   }
 
   if (isEdit && isLoading) return <Spinner />
-
-  const saving = createMutation.isPending || updateMutation.isPending || uploading
 
   return (
     <div>
@@ -332,12 +324,12 @@ export default function AssetFormPage() {
                 {imgPreview ? '🔄 Đổi ảnh' : '📤 Chọn ảnh'}
               </Btn>
               {imgPreview && (
-                <Btn variant="ghost" size="sm" style={{ marginLeft: 8 }} onClick={() => { setImgPreview(null); setImgFile(null); setImgDeleted(true) }}>
+                <Btn variant="ghost" size="sm" style={{ marginLeft: 8 }} onClick={() => { setImgPreview(null); imgFileRef.current = null; imgDeletedRef.current = true }}>
                   🗑️ Xoá
                 </Btn>
               )}
               <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>JPG, PNG — tối đa 5MB</div>
-              {imgFile && !isEdit && (
+              {imgPreview && !isEdit && (
                 <div style={{ fontSize: 11, color: '#10b981', marginTop: 4 }}>Ảnh sẽ được tải lên sau khi tạo tài sản</div>
               )}
             </div>
