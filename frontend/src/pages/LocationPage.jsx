@@ -67,22 +67,31 @@ export default function LocationPage() {
     queryFn: () => locationApi.list().then(r => r.data),
   })
 
+  const fmtErr = (e) => {
+    if (e.response) {
+      const status = e.response.status
+      const detail = e.response.data?.detail || JSON.stringify(e.response.data)
+      return `[${status}] ${detail}`
+    }
+    return e.message || 'Không kết nối được máy chủ'
+  }
+
   const createMut = useMutation({
     mutationFn: (data) => locationApi.create(data),
     onSuccess: () => { qc.invalidateQueries(['locations']); setShowAdd(false); toast.success('Đã thêm vị trí') },
-    onError: (e) => toast.error('Lỗi: ' + (e.response?.data?.detail || e.message)),
+    onError: (e) => toast.error('Thêm vị trí thất bại: ' + fmtErr(e), { duration: 6000 }),
   })
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }) => locationApi.update(id, data),
     onSuccess: () => { qc.invalidateQueries(['locations']); setEditId(null); toast.success('Đã cập nhật vị trí') },
-    onError: (e) => toast.error('Lỗi: ' + (e.response?.data?.detail || e.message)),
+    onError: (e) => toast.error('Cập nhật thất bại: ' + fmtErr(e), { duration: 6000 }),
   })
 
   const deleteMut = useMutation({
     mutationFn: (id) => locationApi.delete(id),
     onSuccess: () => { qc.invalidateQueries(['locations']); toast.success('Đã xoá vị trí') },
-    onError: (e) => toast.error('Lỗi: ' + (e.response?.data?.detail || e.message)),
+    onError: (e) => toast.error('Xoá thất bại: ' + fmtErr(e), { duration: 6000 }),
   })
 
   const filtered = locations.filter(l =>
