@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { transferApi, locationApi, deptApi, personnelApi, assetApi } from '../services/api'
 import { Card, PageHeader, Btn } from '../components/ui'
 import toast from 'react-hot-toast'
+import { useAuthStore } from '../store/authStore'
 
 const ORDER_TYPES = [
   { value: 'ALLOCATION',      label: 'Cấp phát',    color: '#10b981', desc: 'Xuất tài sản từ kho cấp cho bộ phận / cá nhân' },
@@ -30,6 +31,14 @@ function Label({ children, required }) {
 export default function TransferFormPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { hasPermission } = useAuthStore()
+
+  useEffect(() => {
+    if (!hasPermission('Điều chuyển', 'tạo')) {
+      toast.error('Bạn không có quyền tạo phiếu điều chuyển')
+      navigate('/transfers')
+    }
+  }, [])
 
   const [form, setForm] = useState({
     order_type: 'ALLOCATION',

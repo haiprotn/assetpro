@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { assetApi } from '../services/api'
 import { Card, PageHeader, StatusBadge, Btn, DynAttrBadges, fmtVnd, Spinner } from '../components/ui'
 import AssetFormModal from './AssetFormModal'
+import { useAuthStore } from '../store/authStore'
 
 const BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001/api/v1'
 const IMG_HOST = BASE.replace('/api/v1', '')
@@ -42,6 +43,7 @@ export default function AssetDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { hasPermission } = useAuthStore()
   const [lightboxUrl, setLightboxUrl] = useState(null)
   const [qrOpen, setQrOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -140,9 +142,13 @@ export default function AssetDetailPage() {
           <>
             <Btn variant="outline" size="sm" onClick={() => navigate('/assets')}>← Danh sách</Btn>
             <Btn variant="ghost" size="sm" onClick={() => setQrOpen(true)}>📱 Xem QR</Btn>
-            <Btn variant="primary" size="sm" onClick={() => setShowEditModal(true)}>✏️ Chỉnh sửa</Btn>
-            <Btn variant="ghost" size="sm" onClick={() => setConfirmDelete(true)}
-              style={{ color: '#ef4444', border: '1px solid #fca5a5' }}>🗑️ Xoá</Btn>
+            {hasPermission('Tài sản', 'sửa') && (
+              <Btn variant="primary" size="sm" onClick={() => setShowEditModal(true)}>✏️ Chỉnh sửa</Btn>
+            )}
+            {hasPermission('Tài sản', 'xóa') && (
+              <Btn variant="ghost" size="sm" onClick={() => setConfirmDelete(true)}
+                style={{ color: '#ef4444', border: '1px solid #fca5a5' }}>🗑️ Xoá</Btn>
+            )}
           </>
         }
       />

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { assetApi } from '../services/api'
+import { useAuthStore } from '../store/authStore'
 
 const STATUS_VI = {
   IN_USE: 'Đang sử dụng',
@@ -12,6 +13,8 @@ const STATUS_VI = {
 
 export default function TrashPage() {
   const queryClient = useQueryClient()
+  const { hasPermission } = useAuthStore()
+  const canDelete = hasPermission('Tài sản', 'xóa')
   const [selected, setSelected] = useState(new Set())
 
   const { data, isLoading } = useQuery({
@@ -65,7 +68,7 @@ export default function TrashPage() {
             Tài sản đã xóa mềm — xóa vĩnh viễn để giải phóng mã
           </p>
         </div>
-        {selected.size > 0 && (
+        {selected.size > 0 && canDelete && (
           <button
             onClick={handleDeleteSelected}
             disabled={deleteMutation.isPending}
@@ -126,7 +129,7 @@ export default function TrashPage() {
                     </span>
                   </td>
                   <td style={td}>
-                    <button
+                    {canDelete && <button
                       onClick={() => handleDelete(asset)}
                       disabled={deleteMutation.isPending}
                       style={{
@@ -136,7 +139,7 @@ export default function TrashPage() {
                       }}
                     >
                       Xóa vĩnh viễn
-                    </button>
+                    </button>}
                   </td>
                 </tr>
               ))}

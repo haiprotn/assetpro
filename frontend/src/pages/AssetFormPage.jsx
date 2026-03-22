@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { assetApi, deptApi, locationApi, supplierApi, assetTypeGroupApi } from '../services/api'
 import { Card, PageHeader, Btn, Spinner } from '../components/ui'
+import { useAuthStore } from '../store/authStore'
 
 const BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001/api/v1'
 const IMG_HOST = BASE.replace('/api/v1', '')
@@ -102,6 +103,14 @@ export default function AssetFormPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const imgRef = useRef()
+  const { hasPermission } = useAuthStore()
+
+  useEffect(() => {
+    const action = isEdit ? 'sửa' : 'tạo'
+    if (!hasPermission('Tài sản', action)) {
+      navigate('/assets', { replace: true })
+    }
+  }, [isEdit, hasPermission, navigate])
 
   const [form, setForm] = useState(EMPTY)
   const [groupId, setGroupId] = useState('')

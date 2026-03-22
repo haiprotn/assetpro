@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import axios from 'axios'
 import { Card, PageHeader, Btn, Spinner } from '../components/ui'
+import { useAuthStore } from '../store/authStore'
 
 const BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001/api/v1'
 const api = axios.create({ baseURL: BASE })
@@ -89,6 +90,8 @@ function DeptModal({ dept, onClose, onSave }) {
 
 export default function DepartmentsPage() {
   const qc = useQueryClient()
+  const { hasPermission } = useAuthStore()
+  const canManage = hasPermission('Cấu hình', 'toàn quyền')
   const [modal, setModal] = useState(null) // null | { dept? }
   const [deleting, setDeleting] = useState(null)
   const [error, setError] = useState('')
@@ -127,7 +130,7 @@ export default function DepartmentsPage() {
         title="🏢 Quản lý Phòng ban"
         subtitle={`${depts.length} phòng ban trong hệ thống`}
         actions={
-          <Btn variant="primary" onClick={() => setModal({})}>+ Thêm phòng ban</Btn>
+          {canManage && <Btn variant="primary" onClick={() => setModal({})}>+ Thêm phòng ban</Btn>}
         }
       />
 
@@ -171,10 +174,10 @@ export default function DepartmentsPage() {
                       }}>{d.asset_count}</span>
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <Btn variant="ghost" size="sm" onClick={() => setModal({ dept: d })} style={{ marginRight: 6 }}>
+                      {canManage && <Btn variant="ghost" size="sm" onClick={() => setModal({ dept: d })} style={{ marginRight: 6 }}>
                         ✏️ Sửa
-                      </Btn>
-                      <button
+                      </Btn>}
+                      {canManage && <button
                         disabled={deleting === d.id || d.asset_count > 0}
                         onClick={() => handleDelete(d)}
                         title={d.asset_count > 0 ? 'Có tài sản, không thể xóa' : ''}
@@ -185,7 +188,7 @@ export default function DepartmentsPage() {
                           border: 'none', fontWeight: 600, opacity: deleting === d.id ? 0.5 : 1,
                         }}>
                         🗑 Xóa
-                      </button>
+                      </button>}
                     </td>
                   </tr>
                 ))}

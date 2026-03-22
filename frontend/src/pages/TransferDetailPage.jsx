@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { transferApi } from '../services/api'
 import { Card, PageHeader, Btn, StatusBadge, Spinner, fmtDate } from '../components/ui'
 import toast from 'react-hot-toast'
+import { useAuthStore } from '../store/authStore'
 
 const FLOW_STEPS = [
   { key: 'DRAFT',      label: 'Nháp',        icon: '📝' },
@@ -109,6 +110,7 @@ export default function TransferDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { hasPermission } = useAuthStore()
   const [dialog, setDialog] = useState(null) // 'reject' | 'cancel' | null
   const [showQR, setShowQR] = useState(false)
 
@@ -165,23 +167,25 @@ export default function TransferDetailPage() {
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <StatusBadge status={status} />
             <Btn variant="outline" onClick={() => navigate('/transfers')}>← Danh sách</Btn>
-            {(status === 'DRAFT' || status === 'PENDING_APPROVAL') && (
+            {hasPermission('Điều chuyển', 'duyệt') && (status === 'DRAFT' || status === 'PENDING_APPROVAL') && (
               <>
                 <Btn variant="primary" onClick={() => approveMutation.mutate()} disabled={approveMutation.isPending}>✅ Phê duyệt</Btn>
-                <Btn variant="danger" onClick={() => setDialog('reject')}>✗ Từ chối</Btn>
               </>
             )}
-            {status === 'APPROVED' && (
+            {hasPermission('Điều chuyển', 'từ chối') && (status === 'DRAFT' || status === 'PENDING_APPROVAL') && (
+              <Btn variant="danger" onClick={() => setDialog('reject')}>✗ Từ chối</Btn>
+            )}
+            {hasPermission('Điều chuyển', 'duyệt') && status === 'APPROVED' && (
               <Btn variant="accent" onClick={() => dispatchMutation.mutate()} disabled={dispatchMutation.isPending}>
                 🚛 Xuất kho / Vận chuyển
               </Btn>
             )}
-            {(status === 'IN_TRANSIT' || status === 'PENDING_QR_CONFIRM') && (
+            {hasPermission('Điều chuyển', 'duyệt') && (status === 'IN_TRANSIT' || status === 'PENDING_QR_CONFIRM') && (
               <Btn variant="primary" style={{ background: '#d97706' }} onClick={() => setShowQR(true)}>
                 📱 Xác nhận nhận hàng
               </Btn>
             )}
-            {!isTerminal && (
+            {hasPermission('Điều chuyển', 'hủy') && !isTerminal && (
               <Btn variant="outline" style={{ color: '#dc2626', borderColor: '#fecaca' }} onClick={() => setDialog('cancel')}>
                 Huỷ phiếu
               </Btn>

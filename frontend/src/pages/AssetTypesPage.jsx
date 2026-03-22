@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { assetTypeGroupApi } from '../services/api'
 import { Card, PageHeader, Btn, Spinner } from '../components/ui'
+import { useAuthStore } from '../store/authStore'
 
 const ALLOC_TYPES = [
   { value: 'RECOVERABLE', label: 'Cấp phát có thu hồi' },
@@ -154,6 +155,8 @@ function TypeModal({ groupId, onClose, onSave }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function AssetTypesPage() {
   const qc = useQueryClient()
+  const { hasPermission } = useAuthStore()
+  const canManage = hasPermission('Cấu hình', 'toàn quyền')
   const [groupModal, setGroupModal] = useState(null)   // null | {} | group object
   const [typeModal, setTypeModal]   = useState(null)   // null | groupId
   const [expanded, setExpanded]     = useState({})
@@ -229,7 +232,7 @@ export default function AssetTypesPage() {
       <PageHeader
         title="Quản lý Loại tài sản"
         subtitle={`${groups.length} nhóm  •  ${flatTypes.length} loại`}
-        actions={<Btn variant="primary" onClick={() => setGroupModal({})}>+ Thêm nhóm</Btn>}
+        actions={canManage && <Btn variant="primary" onClick={() => setGroupModal({})}>+ Thêm nhóm</Btn>}
       />
 
       <div style={{ padding: 24 }}>
@@ -274,9 +277,9 @@ export default function AssetTypesPage() {
 
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}
                     onClick={e => e.stopPropagation()}>
-                    <Btn variant="ghost" size="sm" onClick={() => setGroupModal(g)}>Sửa</Btn>
-                    <Btn variant="ghost" size="sm" onClick={() => setTypeModal(g.id)}>+ Loại</Btn>
-                    <button
+                    {canManage && <Btn variant="ghost" size="sm" onClick={() => setGroupModal(g)}>Sửa</Btn>}
+                    {canManage && <Btn variant="ghost" size="sm" onClick={() => setTypeModal(g.id)}>+ Loại</Btn>}
+                    {canManage && <button
                       disabled={g.asset_count > 0}
                       onClick={() => handleDeleteGroup(g)}
                       title={g.asset_count > 0 ? 'Đang có tài sản, không thể xóa' : 'Xóa nhóm'}
@@ -285,7 +288,7 @@ export default function AssetTypesPage() {
                         background: g.asset_count > 0 ? '#f1f5f9' : '#fef2f2',
                         color: g.asset_count > 0 ? '#cbd5e1' : '#b91c1c',
                         border: 'none', cursor: g.asset_count > 0 ? 'not-allowed' : 'pointer',
-                      }}>Xóa</button>
+                      }}>Xóa</button>}
                   </div>
 
                   <span style={{ fontSize: 13, color: 'var(--muted)', marginLeft: 4 }}>
@@ -315,7 +318,7 @@ export default function AssetTypesPage() {
                           background: t.asset_count > 0 ? '#dcfce7' : '#f1f5f9',
                           color: t.asset_count > 0 ? '#15803d' : '#94a3b8',
                         }}>{t.asset_count || 0} TS</span>
-                        <button
+                        {canManage && <button
                           disabled={t.asset_count > 0}
                           onClick={() => handleDeleteType(g.id, t)}
                           title={t.asset_count > 0 ? 'Đang có tài sản' : 'Xóa loại'}
@@ -324,7 +327,7 @@ export default function AssetTypesPage() {
                             background: t.asset_count > 0 ? '#f1f5f9' : '#fef2f2',
                             color: t.asset_count > 0 ? '#cbd5e1' : '#ef4444',
                             border: 'none', cursor: t.asset_count > 0 ? 'not-allowed' : 'pointer',
-                          }}>Xóa</button>
+                          }}>Xóa</button>}
                       </div>
                     ))}
                   </div>
