@@ -28,14 +28,15 @@ const EMPTY = {
   quantity: 1, description: '', condition_description: '', tags: '',
 }
 
-function Field({ label, required, children, hint }) {
+function Field({ label, required, children, hint, error }) {
   return (
     <div style={{ marginBottom: 14 }}>
       <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
         {label}{required && <span style={{ color: '#ef4444', marginLeft: 2 }}>*</span>}
       </label>
       {children}
-      {hint && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 3 }}>{hint}</div>}
+      {error && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>Bắt buộc nhập</div>}
+      {hint && !error && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 3 }}>{hint}</div>}
     </div>
   )
 }
@@ -254,6 +255,10 @@ export default function AssetFormModal({ assetId, onClose, onSaved }) {
     if (!form.asset_code.trim()) e.asset_code = 'Bắt buộc'
     if (!form.name.trim()) e.name = 'Bắt buộc'
     if (!isEdit && !form.asset_type_id) e.asset_type_id = 'Bắt buộc'
+    if (!imgPreview) e.asset_image = 'Bắt buộc'
+    if (!form.managing_department_id) e.managing_department_id = 'Bắt buộc'
+    if (!form.current_location_id) e.current_location_id = 'Bắt buộc'
+    if (!form.supplier_id) e.supplier_id = 'Bắt buộc'
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -383,7 +388,8 @@ export default function AssetFormModal({ assetId, onClose, onSaved }) {
 
             {/* Image upload */}
             <Card style={{ marginBottom: 16, padding: 16 }}>
-              <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: '#1a2744' }}>📷 Ảnh tài sản</h3>
+              <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: '#1a2744' }}>📷 Ảnh tài sản <span style={{ color: '#ef4444' }}>*</span></h3>
+              {errors.asset_image && <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 6 }}>Bắt buộc chọn ảnh</div>}
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                 <div
                   onClick={() => imgRef.current.click()}
@@ -514,7 +520,7 @@ export default function AssetFormModal({ assetId, onClose, onSaved }) {
                 </Field>
               </div>
               <div>
-                <Field label="Phòng ban quản lý">
+                <Field label="Phòng ban quản lý" required error={errors.managing_department_id}>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <select value={form.managing_department_id} onChange={e => set('managing_department_id', e.target.value)} style={{ ...sel, flex: 1 }}>
                       <option value="">-- Chọn phòng ban --</option>
@@ -540,7 +546,7 @@ export default function AssetFormModal({ assetId, onClose, onSaved }) {
                 </Field>
               </div>
               <div>
-                <Field label="Vị trí hiện tại">
+                <Field label="Vị trí hiện tại" required error={errors.current_location_id}>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <select value={form.current_location_id} onChange={e => set('current_location_id', e.target.value)} style={{ ...sel, flex: 1 }}>
                       <option value="">-- Chọn vị trí --</option>
@@ -566,7 +572,7 @@ export default function AssetFormModal({ assetId, onClose, onSaved }) {
                 </Field>
               </div>
               <div>
-                <Field label="Nhà cung cấp">
+                <Field label="Nhà cung cấp" required error={errors.supplier_id}>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <select value={form.supplier_id} onChange={e => set('supplier_id', e.target.value)} style={{ ...sel, flex: 1 }}>
                       <option value="">-- Chọn NCC --</option>
