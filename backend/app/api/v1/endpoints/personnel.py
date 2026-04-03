@@ -61,10 +61,28 @@ EXPORT_COLUMNS = [
 
 IMPORT_REQUIRED = {"Mã nhân viên", "Họ và tên"}
 
-GENDER_MAP   = {"nam": "MALE", "nữ": "FEMALE", "khác": "OTHER", "male": "MALE", "female": "FEMALE"}
-STATUS_MAP   = {"thử việc": "PROBATION", "chính thức": "OFFICIAL", "đã nghỉ": "RESIGNED", "chấm dứt": "TERMINATED"}
-SALARY_MAP   = {"lương cố định": "FIXED", "theo công": "TIMESHEET", "khoán sản phẩm": "PIECE",
-                "fixed": "FIXED", "timesheet": "TIMESHEET", "piece": "PIECE"}
+import unicodedata
+
+def _normalize(s: str) -> str:
+    """Lowercase + remove diacritics for fuzzy matching"""
+    if not s:
+        return ""
+    nfkd = unicodedata.normalize("NFKD", s.lower().strip())
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+# All keys already normalized (no accents, lowercase)
+GENDER_MAP  = {"nam": "MALE", "nu": "FEMALE", "khac": "OTHER", "male": "MALE", "female": "FEMALE"}
+STATUS_MAP  = {
+    "thu viec": "PROBATION", "probation": "PROBATION",
+    "chinh thuc": "OFFICIAL", "official": "OFFICIAL",
+    "da nghi": "RESIGNED", "resigned": "RESIGNED",
+    "cham dut": "TERMINATED", "terminated": "TERMINATED",
+}
+SALARY_MAP  = {
+    "luong co dinh": "FIXED", "fixed": "FIXED",
+    "theo cong": "TIMESHEET", "timesheet": "TIMESHEET",
+    "khoan san pham": "PIECE", "piece": "PIECE",
+}
 
 def _date_str(val):
     if val is None:
@@ -303,6 +321,7 @@ async def download_import_template(current_user=Depends(get_current_user)):
 async def import_personnel(
     file: UploadFile = File(...),
     update_existing: bool = Query(False, description="Cập nhật nếu mã NV đã tồn tại"),
+    has_hint_row: bool = Query(False, description="File từ mẫu hệ thống (có dòng gợi ý ở dòng 2)"),
     db=Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -326,13 +345,13 @@ async def import_personnel(
 
     # Load lookup maps: name → id
     depts = (await db.execute(select(Department))).scalars().all()
-    dept_name_map = {d.name.strip().lower(): d.id for d in depts}
+    dept_name_map = {_normalize(d.name): d.id for d in depts}
 
     positions = (await db.execute(select(Position))).scalars().all()
-    pos_name_map = {p.title.strip().lower(): p.id for p in positions}
+    pos_name_map = {_normalize(p.title): p.id for p in positions}
 
     job_titles = (await db.execute(select(PositionTitle))).scalars().all()
-    title_name_map = {t.title.strip().lower(): t.id for t in job_titles}
+    title_name_map = {_normalize(t.title): t.id for t in job_titles}
 
     def get(row, name):
         idx = col.get(name)
@@ -354,7 +373,8 @@ async def import_personnel(
 
     created, updated, errors = 0, 0, []
 
-    for row_idx in range(3, ws.max_row + 1):  # row 2 là gợi ý
+    start_row = 3 if has_hint_row else 2
+    for row_idx in range(start_row, ws.max_row + 1):
         emp_code = get(row_idx, "Mã nhân viên")
         full_name = get(row_idx, "Họ và tên")
         if not emp_code and not full_name:
@@ -364,18 +384,18 @@ async def import_personnel(
             continue
 
         dept_name = get(row_idx, "Phòng ban (tên)")
-        dept_id = dept_name_map.get(dept_name.lower()) if dept_name else None
+        dept_id = dept_name_map.get(_normalize(dept_name)) if dept_name else None
 
         pos_name = get(row_idx, "Vị trí công việc (tên)")
-        pos_id = pos_name_map.get(pos_name.lower()) if pos_name else None
+        pos_id = pos_name_map.get(_normalize(pos_name)) if pos_name else None
 
         title_name = get(row_idx, "Chức danh (tên)")
-        title_id = title_name_map.get(title_name.lower()) if title_name else None
+        title_id = title_name_map.get(_normalize(title_name)) if title_name else None
 
-        gender_raw = (get(row_idx, "Giới tính") or "").lower()
-        job_status_raw = (get(row_idx, "Trạng thái LĐ") or "").lower()
-        salary_raw = (get(row_idx, "Hình thức lương") or "").lower()
-        is_active_raw = (get(row_idx, "Trạng thái TK") or "hoạt động").lower()
+        gender_raw = _normalize(get(row_idx, "Giới tính") or "")
+        job_status_raw = _normalize(get(row_idx, "Trạng thái LĐ") or "")
+        salary_raw = _normalize(get(row_idx, "Hình thức lương") or "")
+        is_active_raw = _normalize(get(row_idx, "Trạng thái TK") or "hoat dong")
 
         data = {
             "employee_code":     emp_code,
@@ -404,7 +424,7 @@ async def import_personnel(
             "salary_method":     SALARY_MAP.get(salary_raw),
             "salary_real":       float(get(row_idx, "Mức lương (VNĐ)") or 0) or None,
             "description":       get(row_idx, "Ghi chú"),
-            "is_active":         is_active_raw != "vô hiệu",
+            "is_active":         is_active_raw != "vo hieu",
         }
 
         existing = (await db.execute(

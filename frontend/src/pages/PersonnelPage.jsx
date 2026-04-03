@@ -49,6 +49,7 @@ export default function PersonnelPage() {
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState(null)
   const [updateExisting, setUpdateExisting] = useState(false)
+  const [hasHintRow, setHasHintRow] = useState(false)
   const importInputRef = useRef(null)
 
   const { data, isLoading } = useQuery({
@@ -125,7 +126,7 @@ export default function PersonnelPage() {
     e.target.value = ''
     setImporting(true)
     try {
-      const res = await personnelApi.importExcel(file, updateExisting)
+      const res = await personnelApi.importExcel(file, updateExisting, hasHintRow)
       setImportResult(res.data)
       qc.invalidateQueries({ queryKey: ['personnel'] })
     } catch (err) {
@@ -154,12 +155,16 @@ export default function PersonnelPage() {
             title="Tải file mẫu Excel"
             style={{ padding: '9px 14px', background: 'white', color: '#475569', border: '1px solid #e2e8f0', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
           >📄 Mẫu</button>
-          <div style={{ position: 'relative' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <button
               onClick={() => importInputRef.current?.click()}
               disabled={importing}
               style={{ padding: '9px 14px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
             >{importing ? '⏳ Đang import...' : '📥 Import'}</button>
+            <label style={{ fontSize: 10, color: '#64748b', display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
+              <input type="checkbox" checked={hasHintRow} onChange={e => setHasHintRow(e.target.checked)} style={{ width: 10, height: 10 }} />
+              File từ mẫu hệ thống
+            </label>
           </div>
           <button
             onClick={handleExport}

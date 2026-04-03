@@ -114,10 +114,10 @@ export const personnelApi = {
   // Contract Types
   listContractTypes: ()     => api.get('/personnel/contract-types/list'),
   // Import / Export
-  importExcel: (file, updateExisting = false) => {
+  importExcel: (file, updateExisting = false, hasHintRow = false) => {
     const fd = new FormData()
     fd.append('file', file)
-    return api.post(`/personnel/import?update_existing=${updateExisting}`, fd)
+    return api.post(`/personnel/import?update_existing=${updateExisting}&has_hint_row=${hasHintRow}`, fd)
   },
 }
 
