@@ -167,15 +167,56 @@ class Asset(Base):
 
 class Personnel(Base):
     __tablename__ = "personnel"
+
+    # ── Định danh ──────────────────────────────────────────
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     employee_code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    department_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("departments.id"))
-    email: Mapped[Optional[str]] = mapped_column(String(255))
+
+    # ── Thông tin cá nhân ──────────────────────────────────
+    birthday: Mapped[Optional[date]] = mapped_column(Date)
+    gender: Mapped[Optional[str]] = mapped_column(String(10))          # MALE / FEMALE / OTHER
+    marital_status: Mapped[Optional[str]] = mapped_column(String(20))  # SINGLE / MARRIED / DIVORCED / WIDOWED
+    private_code: Mapped[Optional[str]] = mapped_column(String(20))    # CMND / CCCD
+    private_code_date: Mapped[Optional[date]] = mapped_column(Date)
+    private_code_place: Mapped[Optional[str]] = mapped_column(String(255))
+    nationality: Mapped[Optional[str]] = mapped_column(String(100))
+    ethnicity: Mapped[Optional[str]] = mapped_column(String(100))
+
+    # ── Liên hệ ────────────────────────────────────────────
     phone: Mapped[Optional[str]] = mapped_column(String(20))
-    position: Mapped[Optional[str]] = mapped_column(String(100))
+    mobile: Mapped[Optional[str]] = mapped_column(String(20))
+    email: Mapped[Optional[str]] = mapped_column(String(255))
+    home_address: Mapped[Optional[str]] = mapped_column(Text)
+    current_address: Mapped[Optional[str]] = mapped_column(Text)
+
+    # ── Ảnh đại diện ───────────────────────────────────────
+    photo_url: Mapped[Optional[str]] = mapped_column(Text)
+
+    # ── Công việc ──────────────────────────────────────────
+    department_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("departments.id"))
+    position_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("positions.id"))
+    job_title_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("position_titles.id"))
+    position: Mapped[Optional[str]] = mapped_column(String(100))       # giữ lại tương thích cũ
+
+    job_status: Mapped[Optional[str]] = mapped_column(String(30))      # PROBATION / OFFICIAL / RESIGNED / TERMINATED
+    job_date_join: Mapped[Optional[date]] = mapped_column(Date)        # Ngày vào làm
+    job_date_try: Mapped[Optional[date]] = mapped_column(Date)         # Ngày bắt đầu thử việc
+    job_reldate_join: Mapped[Optional[date]] = mapped_column(Date)     # Ngày vào chính thức
+    job_date_out: Mapped[Optional[date]] = mapped_column(Date)         # Ngày nghỉ việc
+    job_out_reason: Mapped[Optional[str]] = mapped_column(Text)
+
+    # ── Lương ──────────────────────────────────────────────
+    salary_method: Mapped[Optional[str]] = mapped_column(String(30))   # FIXED / TIMESHEET / PIECE
+    salary_real: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 2))
+
+    # ── Khác ───────────────────────────────────────────────
+    description: Mapped[Optional[str]] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
+    updated_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
 
 
 class TransferOrder(Base):

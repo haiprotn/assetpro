@@ -92,7 +92,28 @@ export const locationApi  = {
   update: (id, data) => api.put(`/locations/${id}`, data),
   delete: (id)       => api.delete(`/locations/${id}`),
 }
-export const personnelApi = { list: () => api.get('/personnel') }
+export const personnelApi = {
+  // Personnel CRUD
+  list:            (params) => api.get('/personnel', { params }),
+  getAll:          ()       => api.get('/personnel/all'),
+  getById:         (id)     => api.get(`/personnel/${id}`),
+  create:          (data)   => api.post('/personnel', data),
+  update:          (id, data) => api.put(`/personnel/${id}`, data),
+  delete:          (id)     => api.delete(`/personnel/${id}`),
+  // Contracts
+  listContracts:   (id)     => api.get(`/personnel/${id}/contracts`),
+  createContract:  (id, data) => api.post(`/personnel/${id}/contracts`, data),
+  updateContract:  (cid, data) => api.put(`/personnel/contracts/${cid}`, data),
+  deleteContract:  (cid)    => api.delete(`/personnel/contracts/${cid}`),
+  // Positions
+  listPositions:   ()       => api.get('/personnel/positions/list'),
+  createPosition:  (data)   => api.post('/personnel/positions', data),
+  // Job Titles
+  listJobTitles:   ()       => api.get('/personnel/job-titles/list'),
+  createJobTitle:  (data)   => api.post('/personnel/job-titles', data),
+  // Contract Types
+  listContractTypes: ()     => api.get('/personnel/contract-types/list'),
+}
 
 export const supplierApi = {
   list:   ()         => api.get('/suppliers'),
@@ -107,6 +128,7 @@ export const deptApi = {
   update: (id, data) => api.put(`/departments/${id}`, data),
   delete: (id)       => api.delete(`/departments/${id}`),
 }
+export const departmentApi = deptApi
 
 export const assetTypeGroupApi = {
   list:            ()                      => api.get('/asset-types'),

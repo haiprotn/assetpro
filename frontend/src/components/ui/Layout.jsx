@@ -21,6 +21,7 @@ const NAV = [
   { separator: true },
   { to: '/locations',   icon: '📍', label: 'Vị trí' },
   { to: '/departments', icon: '🏢', label: 'Phòng ban' },
+  { to: '/personnel',   icon: '👤', label: 'Nhân sự' },
   { to: '/asset-types', icon: '🏷️', label: 'Loại tài sản' },
   { to: '/config',      icon: '⚙️', label: 'Cấu hình' },
   { separator: true },
