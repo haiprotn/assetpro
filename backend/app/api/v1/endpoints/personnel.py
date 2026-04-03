@@ -381,6 +381,19 @@ async def import_personnel(
         except Exception:
             return None
 
+    def clean_phone(s, maxlen=20):
+        """Lấy số đầu tiên nếu có nhiều số phân cách bởi , / space"""
+        if not s:
+            return None
+        first = s.replace("/", ",").replace(";", ",").split(",")[0].strip()
+        return first[:maxlen] if first else None
+
+    def trunc(s, maxlen):
+        """Cắt chuỗi về đúng độ dài tối đa"""
+        if s is None:
+            return None
+        return str(s)[:maxlen]
+
     created, updated, errors = 0, 0, []
 
     start_row = 3 if has_hint_row else 2
@@ -410,18 +423,18 @@ async def import_personnel(
             is_active_raw  = _normalize(get(row_idx, "Trạng thái TK") or "hoat dong")
 
             data = {
-                "employee_code":      emp_code,
-                "full_name":          full_name,
+                "employee_code":      trunc(emp_code, 50),
+                "full_name":          trunc(full_name, 255),
                 "gender":             GENDER_MAP.get(gender_raw),
                 "birthday":           parse_date(get(row_idx, "Ngày sinh")),
-                "private_code":       get(row_idx, "Số CMND/CCCD"),
+                "private_code":       trunc(get(row_idx, "Số CMND/CCCD"), 20),
                 "private_code_date":  parse_date(get(row_idx, "Ngày cấp")),
-                "private_code_place": get(row_idx, "Nơi cấp"),
-                "nationality":        get(row_idx, "Quốc tịch"),
-                "ethnicity":          get(row_idx, "Dân tộc"),
-                "email":              get(row_idx, "Email"),
-                "phone":              get(row_idx, "Điện thoại"),
-                "mobile":             get(row_idx, "Di động"),
+                "private_code_place": trunc(get(row_idx, "Nơi cấp"), 255),
+                "nationality":        trunc(get(row_idx, "Quốc tịch"), 100),
+                "ethnicity":          trunc(get(row_idx, "Dân tộc"), 100),
+                "email":              trunc(get(row_idx, "Email"), 255),
+                "phone":              clean_phone(get(row_idx, "Điện thoại")),
+                "mobile":             clean_phone(get(row_idx, "Di động")),
                 "home_address":       get(row_idx, "Địa chỉ thường trú"),
                 "current_address":    get(row_idx, "Địa chỉ hiện tại"),
                 "department_id":      dept_id,
@@ -439,27 +452,32 @@ async def import_personnel(
                 "is_active":          is_active_raw != "vo hieu",
             }
 
-            existing = (await db.execute(
-                select(Personnel).where(Personnel.employee_code == emp_code)
-            )).scalar_one_or_none()
+            # Dùng savepoint để lỗi 1 dòng không làm hỏng transaction
+            try:
+                async with db.begin_nested():
+                    existing = (await db.execute(
+                        select(Personnel).where(Personnel.employee_code == emp_code)
+                    )).scalar_one_or_none()
 
-            if existing:
-                if update_existing:
-                    for k, v in data.items():
-                        if k != "employee_code" and v is not None:
-                            setattr(existing, k, v)
-                    existing.updated_by = current_user.id
-                    updated += 1
-                else:
-                    errors.append({"row": row_idx, "error": f"Mã NV '{emp_code}' đã tồn tại (bỏ qua)"})
-            else:
-                clean = {k: v for k, v in data.items() if v is not None}
-                p = Personnel(**clean, created_by=current_user.id)
-                db.add(p)
-                created += 1
+                    if existing:
+                        if update_existing:
+                            for k, v in data.items():
+                                if k != "employee_code" and v is not None:
+                                    setattr(existing, k, v)
+                            existing.updated_by = current_user.id
+                            updated += 1
+                        else:
+                            errors.append({"row": row_idx, "error": f"Mã NV '{emp_code}' đã tồn tại (bỏ qua)"})
+                    else:
+                        clean = {k: v for k, v in data.items() if v is not None}
+                        p = Personnel(**clean, created_by=current_user.id)
+                        db.add(p)
+                        created += 1
+            except Exception as row_exc:
+                errors.append({"row": row_idx, "error": f"Dòng {emp_code}: {str(row_exc)[:120]}"})
 
         except Exception as exc:
-            errors.append({"row": row_idx, "error": f"Lỗi xử lý: {str(exc)}"})
+            errors.append({"row": row_idx, "error": f"Lỗi đọc dòng: {str(exc)[:120]}"})
             continue
 
     try:
