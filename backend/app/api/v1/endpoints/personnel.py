@@ -1,12 +1,17 @@
 """
 Personnel API Endpoints - Quản lý nhân sự
 """
+import io
 import math
 import uuid
+from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, func, or_, and_
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
+from fastapi.responses import StreamingResponse
+from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
 
 from app.db.session import get_db
@@ -22,6 +27,107 @@ from app.schemas.personnel import (
 )
 
 router = APIRouter()
+
+# ── Cấu hình cột Excel ───────────────────────────────────────
+EXPORT_COLUMNS = [
+    ("Mã nhân viên",        "employee_code"),
+    ("Họ và tên",           "full_name"),
+    ("Giới tính",           "gender"),
+    ("Ngày sinh",           "birthday"),
+    ("Số CMND/CCCD",        "private_code"),
+    ("Ngày cấp",            "private_code_date"),
+    ("Nơi cấp",             "private_code_place"),
+    ("Quốc tịch",           "nationality"),
+    ("Dân tộc",             "ethnicity"),
+    ("Email",               "email"),
+    ("Điện thoại",          "phone"),
+    ("Di động",             "mobile"),
+    ("Địa chỉ thường trú",  "home_address"),
+    ("Địa chỉ hiện tại",    "current_address"),
+    ("Phòng ban (tên)",     "_department_name"),
+    ("Trạng thái LĐ",       "job_status"),
+    ("Ngày vào làm",        "job_date_join"),
+    ("Ngày thử việc",       "job_date_try"),
+    ("Ngày chính thức",     "job_reldate_join"),
+    ("Ngày nghỉ việc",      "job_date_out"),
+    ("Lý do nghỉ",          "job_out_reason"),
+    ("Hình thức lương",     "salary_method"),
+    ("Mức lương (VNĐ)",     "salary_real"),
+    ("Ghi chú",             "description"),
+    ("Trạng thái TK",       "_is_active"),
+]
+
+IMPORT_REQUIRED = {"Mã nhân viên", "Họ và tên"}
+
+GENDER_MAP   = {"nam": "MALE", "nữ": "FEMALE", "khác": "OTHER", "male": "MALE", "female": "FEMALE"}
+STATUS_MAP   = {"thử việc": "PROBATION", "chính thức": "OFFICIAL", "đã nghỉ": "RESIGNED", "chấm dứt": "TERMINATED"}
+SALARY_MAP   = {"lương cố định": "FIXED", "theo công": "TIMESHEET", "khoán sản phẩm": "PIECE",
+                "fixed": "FIXED", "timesheet": "TIMESHEET", "piece": "PIECE"}
+
+def _date_str(val):
+    if val is None:
+        return ""
+    if isinstance(val, (date,)):
+        return val.strftime("%d/%m/%Y")
+    return str(val)
+
+def _build_excel(rows, dept_map):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Danh sách nhân sự"
+
+    header_fill = PatternFill("solid", fgColor="1A2744")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin = Side(style="thin", color="D1D5DB")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    # Header
+    for col_idx, (header, _) in enumerate(EXPORT_COLUMNS, 1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = center
+        cell.border = border
+
+    ws.row_dimensions[1].height = 30
+
+    # Data
+    for row_idx, p in enumerate(rows, 2):
+        for col_idx, (_, field) in enumerate(EXPORT_COLUMNS, 1):
+            if field == "_department_name":
+                val = dept_map.get(str(p.department_id), "")
+            elif field == "_is_active":
+                val = "Hoạt động" if p.is_active else "Vô hiệu"
+            elif field in ("birthday", "private_code_date", "job_date_join",
+                           "job_date_try", "job_reldate_join", "job_date_out"):
+                val = _date_str(getattr(p, field, None))
+            elif field == "gender":
+                raw = getattr(p, field, None) or ""
+                val = {"MALE": "Nam", "FEMALE": "Nữ", "OTHER": "Khác"}.get(raw, raw)
+            elif field == "job_status":
+                raw = getattr(p, field, None) or ""
+                val = {"PROBATION": "Thử việc", "OFFICIAL": "Chính thức",
+                       "RESIGNED": "Đã nghỉ", "TERMINATED": "Chấm dứt"}.get(raw, raw)
+            elif field == "salary_method":
+                raw = getattr(p, field, None) or ""
+                val = {"FIXED": "Lương cố định", "TIMESHEET": "Theo công",
+                       "PIECE": "Khoán sản phẩm"}.get(raw, raw)
+            else:
+                val = getattr(p, field, None)
+                if val is not None:
+                    val = str(val) if not isinstance(val, (int, float)) else val
+            cell = ws.cell(row=row_idx, column=col_idx, value=val)
+            cell.border = border
+            cell.alignment = Alignment(vertical="center", wrap_text=False)
+
+    # Column widths
+    col_widths = [14,22,10,13,16,13,24,12,10,24,14,14,30,30,20,14,13,13,13,13,24,16,16,30,14]
+    for i, w in enumerate(col_widths, 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+
+    ws.freeze_panes = "A2"
+    return wb
 
 
 # ════════════════════════════════════════════════════════════
@@ -84,6 +190,218 @@ async def list_personnel_all(
         .order_by(Personnel.full_name)
     )
     return result.scalars().all()
+
+
+@router.get("/export", summary="Xuất danh sách nhân sự ra Excel")
+async def export_personnel(
+    search: Optional[str] = Query(None),
+    department_id: Optional[uuid.UUID] = Query(None),
+    job_status: Optional[str] = Query(None),
+    is_active: Optional[bool] = Query(None),
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    q = select(Personnel)
+    if search:
+        like = f"%{search}%"
+        q = q.where(or_(
+            Personnel.full_name.ilike(like),
+            Personnel.employee_code.ilike(like),
+            Personnel.email.ilike(like),
+        ))
+    if department_id:
+        q = q.where(Personnel.department_id == department_id)
+    if job_status:
+        q = q.where(Personnel.job_status == job_status)
+    if is_active is not None:
+        q = q.where(Personnel.is_active == is_active)
+
+    rows = (await db.execute(q.order_by(Personnel.full_name))).scalars().all()
+
+    depts = (await db.execute(select(Department))).scalars().all()
+    dept_map = {str(d.id): d.name for d in depts}
+
+    wb = _build_excel(rows, dept_map)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    from datetime import datetime
+    filename = f"nhan_su_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/import-template", summary="Tải file mẫu nhập nhân sự")
+async def download_import_template(current_user=Depends(get_current_user)):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Mẫu nhập nhân sự"
+
+    header_fill = PatternFill("solid", fgColor="1A2744")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    thin = Side(style="thin", color="D1D5DB")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    center = Alignment(horizontal="center", vertical="center")
+
+    headers = [h for h, _ in EXPORT_COLUMNS]
+    for col_idx, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = center
+        cell.border = border
+
+    # Dòng gợi ý
+    hints = [
+        "NV001", "Nguyễn Văn A", "Nam / Nữ / Khác", "dd/mm/yyyy",
+        "012345678901", "dd/mm/yyyy", "Công an TP.HCM", "Việt Nam", "Kinh",
+        "nv@email.com", "024...", "09x...", "Địa chỉ thường trú", "Địa chỉ hiện tại",
+        "Tên phòng ban", "Thử việc / Chính thức / Đã nghỉ / Chấm dứt",
+        "dd/mm/yyyy", "dd/mm/yyyy", "dd/mm/yyyy", "dd/mm/yyyy", "",
+        "Lương cố định / Theo công / Khoán sản phẩm", "10000000", "", "Hoạt động / Vô hiệu",
+    ]
+    hint_font = Font(color="94A3B8", italic=True, size=10)
+    for col_idx, hint in enumerate(hints, 1):
+        cell = ws.cell(row=2, column=col_idx, value=hint)
+        cell.font = hint_font
+        cell.border = border
+
+    col_widths = [14,22,10,13,16,13,24,12,10,24,14,14,30,30,20,18,13,13,13,13,24,20,16,30,14]
+    for i, w in enumerate(col_widths, 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+    ws.row_dimensions[1].height = 28
+    ws.freeze_panes = "A3"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=mau_nhap_nhan_su.xlsx"},
+    )
+
+
+@router.post("/import", summary="Nhập nhân sự từ file Excel")
+async def import_personnel(
+    file: UploadFile = File(...),
+    update_existing: bool = Query(False, description="Cập nhật nếu mã NV đã tồn tại"),
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    if not file.filename.endswith((".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="Chỉ chấp nhận file Excel (.xlsx, .xls)")
+
+    content = await file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="File Excel không hợp lệ")
+
+    ws = wb.active
+    headers = [str(ws.cell(1, c).value or "").strip() for c in range(1, ws.max_column + 1)]
+
+    # Map header → column index (0-based)
+    col = {h: i for i, h in enumerate(headers)}
+    missing = IMPORT_REQUIRED - set(headers)
+    if missing:
+        raise HTTPException(status_code=400, detail=f"File thiếu cột bắt buộc: {', '.join(missing)}")
+
+    # Load departments for name → id lookup
+    depts = (await db.execute(select(Department))).scalars().all()
+    dept_name_map = {d.name.strip().lower(): d.id for d in depts}
+
+    def get(row, name):
+        idx = col.get(name)
+        if idx is None:
+            return None
+        v = ws.cell(row, idx + 1).value
+        return str(v).strip() if v is not None else None
+
+    def parse_date(s):
+        if not s:
+            return None
+        for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+            try:
+                from datetime import datetime as dt
+                return dt.strptime(s.strip(), fmt).date()
+            except Exception:
+                pass
+        return None
+
+    created, updated, errors = 0, 0, []
+
+    for row_idx in range(3, ws.max_row + 1):  # row 2 là gợi ý
+        emp_code = get(row_idx, "Mã nhân viên")
+        full_name = get(row_idx, "Họ và tên")
+        if not emp_code and not full_name:
+            continue  # dòng trống
+        if not emp_code or not full_name:
+            errors.append({"row": row_idx, "error": "Thiếu Mã nhân viên hoặc Họ tên"})
+            continue
+
+        dept_name = get(row_idx, "Phòng ban (tên)")
+        dept_id = dept_name_map.get(dept_name.lower()) if dept_name else None
+
+        gender_raw = (get(row_idx, "Giới tính") or "").lower()
+        job_status_raw = (get(row_idx, "Trạng thái LĐ") or "").lower()
+        salary_raw = (get(row_idx, "Hình thức lương") or "").lower()
+        is_active_raw = (get(row_idx, "Trạng thái TK") or "hoạt động").lower()
+
+        data = {
+            "employee_code":     emp_code,
+            "full_name":         full_name,
+            "gender":            GENDER_MAP.get(gender_raw),
+            "birthday":          parse_date(get(row_idx, "Ngày sinh")),
+            "private_code":      get(row_idx, "Số CMND/CCCD"),
+            "private_code_date": parse_date(get(row_idx, "Ngày cấp")),
+            "private_code_place":get(row_idx, "Nơi cấp"),
+            "nationality":       get(row_idx, "Quốc tịch"),
+            "ethnicity":         get(row_idx, "Dân tộc"),
+            "email":             get(row_idx, "Email"),
+            "phone":             get(row_idx, "Điện thoại"),
+            "mobile":            get(row_idx, "Di động"),
+            "home_address":      get(row_idx, "Địa chỉ thường trú"),
+            "current_address":   get(row_idx, "Địa chỉ hiện tại"),
+            "department_id":     dept_id,
+            "job_status":        STATUS_MAP.get(job_status_raw),
+            "job_date_join":     parse_date(get(row_idx, "Ngày vào làm")),
+            "job_date_try":      parse_date(get(row_idx, "Ngày thử việc")),
+            "job_reldate_join":  parse_date(get(row_idx, "Ngày chính thức")),
+            "job_date_out":      parse_date(get(row_idx, "Ngày nghỉ việc")),
+            "job_out_reason":    get(row_idx, "Lý do nghỉ"),
+            "salary_method":     SALARY_MAP.get(salary_raw),
+            "salary_real":       float(get(row_idx, "Mức lương (VNĐ)") or 0) or None,
+            "description":       get(row_idx, "Ghi chú"),
+            "is_active":         is_active_raw != "vô hiệu",
+        }
+
+        existing = (await db.execute(
+            select(Personnel).where(Personnel.employee_code == emp_code)
+        )).scalar_one_or_none()
+
+        if existing:
+            if update_existing:
+                for k, v in data.items():
+                    if k != "employee_code" and v is not None:
+                        setattr(existing, k, v)
+                existing.updated_by = current_user.id
+                updated += 1
+            else:
+                errors.append({"row": row_idx, "error": f"Mã NV '{emp_code}' đã tồn tại (bỏ qua)"})
+        else:
+            p = Personnel(**{k: v for k, v in data.items() if v is not None},
+                          employee_code=emp_code, full_name=full_name,
+                          created_by=current_user.id)
+            db.add(p)
+            created += 1
+
+    await db.commit()
+    return {"created": created, "updated": updated, "errors": errors, "total_rows": created + updated + len(errors)}
 
 
 @router.post("", response_model=PersonnelOut, status_code=status.HTTP_201_CREATED, summary="Thêm nhân viên")

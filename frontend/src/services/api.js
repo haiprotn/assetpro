@@ -113,6 +113,12 @@ export const personnelApi = {
   createJobTitle:  (data)   => api.post('/personnel/job-titles', data),
   // Contract Types
   listContractTypes: ()     => api.get('/personnel/contract-types/list'),
+  // Import / Export
+  importExcel: (file, updateExisting = false) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return api.post(`/personnel/import?update_existing=${updateExisting}`, fd)
+  },
 }
 
 export const supplierApi = {

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { personnelApi } from '../services/api'
@@ -46,6 +46,10 @@ export default function PersonnelPage() {
   const [showModal, setShowModal] = useState(false)
   const [editItem, setEditItem] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState(null)
+  const [updateExisting, setUpdateExisting] = useState(false)
+  const importInputRef = useRef(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['personnel', page, search, filterStatus, filterDept],
@@ -81,6 +85,56 @@ export default function PersonnelPage() {
   const handleCloseModal = () => { setShowModal(false); setEditItem(null) }
   const handleSaved = () => { qc.invalidateQueries({ queryKey: ['personnel'] }); handleCloseModal() }
 
+  const handleExport = async () => {
+    const params = new URLSearchParams()
+    if (search) params.set('search', search)
+    if (filterStatus) params.set('job_status', filterStatus)
+    if (filterDept) params.set('department_id', filterDept)
+    const token = localStorage.getItem('access_token')
+    const base = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001/api/v1'
+    const res = await fetch(`${base}/personnel/export?${params}`, {
+      headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' },
+    })
+    if (!res.ok) return alert('Xuất file thất bại')
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `nhan_su_${new Date().toISOString().slice(0,10)}.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleDownloadTemplate = async () => {
+    const token = localStorage.getItem('access_token')
+    const base = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001/api/v1'
+    const res = await fetch(`${base}/personnel/import-template`, {
+      headers: { Authorization: `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' },
+    })
+    if (!res.ok) return alert('Tải mẫu thất bại')
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = 'mau_nhap_nhan_su.xlsx'; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setImporting(true)
+    try {
+      const res = await personnelApi.importExcel(file, updateExisting)
+      setImportResult(res.data)
+      qc.invalidateQueries({ queryKey: ['personnel'] })
+    } catch (err) {
+      setImportResult({ error: err.response?.data?.detail || 'Import thất bại' })
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <div style={{ padding: '24px 28px', maxWidth: 1200 }}>
 
@@ -92,16 +146,34 @@ export default function PersonnelPage() {
             Quản lý thông tin nhân viên, hợp đồng lao động
           </p>
         </div>
-        <button
-          onClick={() => handleOpenModal()}
-          style={{
-            padding: '10px 20px', background: '#1a2744', color: 'white',
-            border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 700, fontSize: 13,
-            display: 'flex', alignItems: 'center', gap: 6,
-          }}
-        >
-          ➕ Thêm nhân viên
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {/* Import */}
+          <input ref={importInputRef} type="file" accept=".xlsx,.xls" onChange={handleImportFile} style={{ display: 'none' }} />
+          <button
+            onClick={handleDownloadTemplate}
+            title="Tải file mẫu Excel"
+            style={{ padding: '9px 14px', background: 'white', color: '#475569', border: '1px solid #e2e8f0', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
+          >📄 Mẫu</button>
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => importInputRef.current?.click()}
+              disabled={importing}
+              style={{ padding: '9px 14px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
+            >{importing ? '⏳ Đang import...' : '📥 Import'}</button>
+          </div>
+          <button
+            onClick={handleExport}
+            style={{ padding: '9px 14px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
+          >📤 Export</button>
+          <button
+            onClick={() => handleOpenModal()}
+            style={{
+              padding: '10px 20px', background: '#1a2744', color: 'white',
+              border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 700, fontSize: 13,
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}
+          >➕ Thêm nhân viên</button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -264,6 +336,58 @@ export default function PersonnelPage() {
           onClose={handleCloseModal}
           onSaved={handleSaved}
         />
+      )}
+
+      {/* Import result modal */}
+      {importResult && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
+          <div style={{ background: 'white', borderRadius: 14, padding: 28, width: 440, maxHeight: '80vh', overflowY: 'auto' }}>
+            <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 16 }}>
+              {importResult.error ? '❌ Import thất bại' : '✅ Kết quả Import'}
+            </div>
+            {importResult.error ? (
+              <p style={{ color: '#dc2626', fontSize: 14 }}>{importResult.error}</p>
+            ) : (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+                  {[
+                    { label: 'Tổng dòng xử lý', value: importResult.total_rows, color: '#1a2744' },
+                    { label: 'Thêm mới', value: importResult.created, color: '#16a34a' },
+                    { label: 'Cập nhật', value: importResult.updated, color: '#2563eb' },
+                    { label: 'Lỗi / Bỏ qua', value: importResult.errors?.length || 0, color: '#dc2626' },
+                  ].map(s => (
+                    <div key={s.label} style={{ background: '#f8fafc', borderRadius: 8, padding: '12px 14px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: s.color }}>{s.value}</div>
+                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+                {importResult.errors?.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#dc2626', marginBottom: 6 }}>Chi tiết lỗi:</div>
+                    <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid #fee2e2', borderRadius: 6 }}>
+                      {importResult.errors.map((e, i) => (
+                        <div key={i} style={{ padding: '6px 10px', fontSize: 12, borderBottom: '1px solid #fee2e2', color: '#475569' }}>
+                          <span style={{ color: '#94a3b8', marginRight: 8 }}>Dòng {e.row}:</span>{e.error}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <label style={{ fontSize: 12, color: '#475569', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={updateExisting} onChange={e => setUpdateExisting(e.target.checked)} />
+                    Cập nhật NV đã tồn tại ở lần import tiếp theo
+                  </label>
+                </div>
+              </>
+            )}
+            <button
+              onClick={() => setImportResult(null)}
+              style={{ marginTop: 16, width: '100%', padding: '9px', background: '#1a2744', color: 'white', border: 'none', borderRadius: 7, cursor: 'pointer', fontWeight: 700 }}
+            >Đóng</button>
+          </div>
+        </div>
       )}
 
       {/* Confirm xóa */}
