@@ -371,84 +371,110 @@ async def import_personnel(
                 pass
         return None
 
+    def parse_salary(s):
+        if not s:
+            return None
+        try:
+            cleaned = str(s).replace(",", "").replace(".", "").replace(" ", "").strip()
+            val = float(cleaned)
+            return val if val > 0 else None
+        except Exception:
+            return None
+
     created, updated, errors = 0, 0, []
 
     start_row = 3 if has_hint_row else 2
     for row_idx in range(start_row, ws.max_row + 1):
-        emp_code = get(row_idx, "Mã nhân viên")
-        full_name = get(row_idx, "Họ và tên")
-        if not emp_code and not full_name:
-            continue  # dòng trống
-        if not emp_code or not full_name:
-            errors.append({"row": row_idx, "error": "Thiếu Mã nhân viên hoặc Họ tên"})
+        try:
+            emp_code = get(row_idx, "Mã nhân viên")
+            full_name = get(row_idx, "Họ và tên")
+            if not emp_code and not full_name:
+                continue  # dòng trống
+            if not emp_code:
+                errors.append({"row": row_idx, "error": f"Thiếu Mã nhân viên (tên: {full_name})"})
+                continue
+            if not full_name:
+                errors.append({"row": row_idx, "error": f"Thiếu Họ và tên (mã: {emp_code})"})
+                continue
+
+            dept_name  = get(row_idx, "Phòng ban (tên)")
+            dept_id    = dept_name_map.get(_normalize(dept_name)) if dept_name else None
+            pos_name   = get(row_idx, "Vị trí công việc (tên)")
+            pos_id     = pos_name_map.get(_normalize(pos_name)) if pos_name else None
+            title_name = get(row_idx, "Chức danh (tên)")
+            title_id   = title_name_map.get(_normalize(title_name)) if title_name else None
+
+            gender_raw     = _normalize(get(row_idx, "Giới tính") or "")
+            job_status_raw = _normalize(get(row_idx, "Trạng thái LĐ") or "")
+            salary_raw     = _normalize(get(row_idx, "Hình thức lương") or "")
+            is_active_raw  = _normalize(get(row_idx, "Trạng thái TK") or "hoat dong")
+
+            data = {
+                "employee_code":      emp_code,
+                "full_name":          full_name,
+                "gender":             GENDER_MAP.get(gender_raw),
+                "birthday":           parse_date(get(row_idx, "Ngày sinh")),
+                "private_code":       get(row_idx, "Số CMND/CCCD"),
+                "private_code_date":  parse_date(get(row_idx, "Ngày cấp")),
+                "private_code_place": get(row_idx, "Nơi cấp"),
+                "nationality":        get(row_idx, "Quốc tịch"),
+                "ethnicity":          get(row_idx, "Dân tộc"),
+                "email":              get(row_idx, "Email"),
+                "phone":              get(row_idx, "Điện thoại"),
+                "mobile":             get(row_idx, "Di động"),
+                "home_address":       get(row_idx, "Địa chỉ thường trú"),
+                "current_address":    get(row_idx, "Địa chỉ hiện tại"),
+                "department_id":      dept_id,
+                "position_id":        pos_id,
+                "job_title_id":       title_id,
+                "job_status":         STATUS_MAP.get(job_status_raw),
+                "job_date_join":      parse_date(get(row_idx, "Ngày vào làm")),
+                "job_date_try":       parse_date(get(row_idx, "Ngày thử việc")),
+                "job_reldate_join":   parse_date(get(row_idx, "Ngày chính thức")),
+                "job_date_out":       parse_date(get(row_idx, "Ngày nghỉ việc")),
+                "job_out_reason":     get(row_idx, "Lý do nghỉ"),
+                "salary_method":      SALARY_MAP.get(salary_raw),
+                "salary_real":        parse_salary(get(row_idx, "Mức lương (VNĐ)")),
+                "description":        get(row_idx, "Ghi chú"),
+                "is_active":          is_active_raw != "vo hieu",
+            }
+
+            existing = (await db.execute(
+                select(Personnel).where(Personnel.employee_code == emp_code)
+            )).scalar_one_or_none()
+
+            if existing:
+                if update_existing:
+                    for k, v in data.items():
+                        if k != "employee_code" and v is not None:
+                            setattr(existing, k, v)
+                    existing.updated_by = current_user.id
+                    updated += 1
+                else:
+                    errors.append({"row": row_idx, "error": f"Mã NV '{emp_code}' đã tồn tại (bỏ qua)"})
+            else:
+                clean = {k: v for k, v in data.items() if v is not None}
+                p = Personnel(**clean, created_by=current_user.id)
+                db.add(p)
+                created += 1
+
+        except Exception as exc:
+            errors.append({"row": row_idx, "error": f"Lỗi xử lý: {str(exc)}"})
             continue
 
-        dept_name = get(row_idx, "Phòng ban (tên)")
-        dept_id = dept_name_map.get(_normalize(dept_name)) if dept_name else None
+    try:
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Lỗi lưu dữ liệu: {str(exc)}")
 
-        pos_name = get(row_idx, "Vị trí công việc (tên)")
-        pos_id = pos_name_map.get(_normalize(pos_name)) if pos_name else None
-
-        title_name = get(row_idx, "Chức danh (tên)")
-        title_id = title_name_map.get(_normalize(title_name)) if title_name else None
-
-        gender_raw = _normalize(get(row_idx, "Giới tính") or "")
-        job_status_raw = _normalize(get(row_idx, "Trạng thái LĐ") or "")
-        salary_raw = _normalize(get(row_idx, "Hình thức lương") or "")
-        is_active_raw = _normalize(get(row_idx, "Trạng thái TK") or "hoat dong")
-
-        data = {
-            "employee_code":     emp_code,
-            "full_name":         full_name,
-            "gender":            GENDER_MAP.get(gender_raw),
-            "birthday":          parse_date(get(row_idx, "Ngày sinh")),
-            "private_code":      get(row_idx, "Số CMND/CCCD"),
-            "private_code_date": parse_date(get(row_idx, "Ngày cấp")),
-            "private_code_place":get(row_idx, "Nơi cấp"),
-            "nationality":       get(row_idx, "Quốc tịch"),
-            "ethnicity":         get(row_idx, "Dân tộc"),
-            "email":             get(row_idx, "Email"),
-            "phone":             get(row_idx, "Điện thoại"),
-            "mobile":            get(row_idx, "Di động"),
-            "home_address":      get(row_idx, "Địa chỉ thường trú"),
-            "current_address":   get(row_idx, "Địa chỉ hiện tại"),
-            "department_id":     dept_id,
-            "position_id":       pos_id,
-            "job_title_id":      title_id,
-            "job_status":        STATUS_MAP.get(job_status_raw),
-            "job_date_join":     parse_date(get(row_idx, "Ngày vào làm")),
-            "job_date_try":      parse_date(get(row_idx, "Ngày thử việc")),
-            "job_reldate_join":  parse_date(get(row_idx, "Ngày chính thức")),
-            "job_date_out":      parse_date(get(row_idx, "Ngày nghỉ việc")),
-            "job_out_reason":    get(row_idx, "Lý do nghỉ"),
-            "salary_method":     SALARY_MAP.get(salary_raw),
-            "salary_real":       float(get(row_idx, "Mức lương (VNĐ)") or 0) or None,
-            "description":       get(row_idx, "Ghi chú"),
-            "is_active":         is_active_raw != "vo hieu",
-        }
-
-        existing = (await db.execute(
-            select(Personnel).where(Personnel.employee_code == emp_code)
-        )).scalar_one_or_none()
-
-        if existing:
-            if update_existing:
-                for k, v in data.items():
-                    if k != "employee_code" and v is not None:
-                        setattr(existing, k, v)
-                existing.updated_by = current_user.id
-                updated += 1
-            else:
-                errors.append({"row": row_idx, "error": f"Mã NV '{emp_code}' đã tồn tại (bỏ qua)"})
-        else:
-            p = Personnel(**{k: v for k, v in data.items() if v is not None},
-                          employee_code=emp_code, full_name=full_name,
-                          created_by=current_user.id)
-            db.add(p)
-            created += 1
-
-    await db.commit()
-    return {"created": created, "updated": updated, "errors": errors, "total_rows": created + updated + len(errors)}
+    return {
+        "created": created,
+        "updated": updated,
+        "errors": errors,
+        "total_rows": created + updated + len(errors),
+        "headers_found": headers[:5],  # debug: 5 cột đầu tìm thấy
+    }
 
 
 @router.post("", response_model=PersonnelOut, status_code=status.HTTP_201_CREATED, summary="Thêm nhân viên")

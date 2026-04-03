@@ -130,7 +130,11 @@ export default function PersonnelPage() {
       setImportResult(res.data)
       qc.invalidateQueries({ queryKey: ['personnel'] })
     } catch (err) {
-      setImportResult({ error: err.response?.data?.detail || 'Import thất bại' })
+      const detail = err.response?.data?.detail
+      const msg = typeof detail === 'string' ? detail
+        : Array.isArray(detail) ? detail.map(d => d.msg || JSON.stringify(d)).join('; ')
+        : JSON.stringify(detail) || 'Import thất bại — kiểm tra file và thử lại'
+      setImportResult({ error: msg })
     } finally {
       setImporting(false)
     }
@@ -377,6 +381,11 @@ export default function PersonnelPage() {
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
+                {importResult.headers_found && (
+                  <div style={{ marginTop: 10, fontSize: 11, color: '#94a3b8' }}>
+                    Cột đọc được: {importResult.headers_found.join(', ')}...
                   </div>
                 )}
                 <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
