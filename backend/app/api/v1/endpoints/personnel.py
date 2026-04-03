@@ -44,8 +44,10 @@ EXPORT_COLUMNS = [
     ("Di động",             "mobile"),
     ("Địa chỉ thường trú",  "home_address"),
     ("Địa chỉ hiện tại",    "current_address"),
-    ("Phòng ban (tên)",     "_department_name"),
-    ("Trạng thái LĐ",       "job_status"),
+    ("Phòng ban (tên)",         "_department_name"),
+    ("Vị trí công việc (tên)", "_position_name"),
+    ("Chức danh (tên)",        "_job_title_name"),
+    ("Trạng thái LĐ",          "job_status"),
     ("Ngày vào làm",        "job_date_join"),
     ("Ngày thử việc",       "job_date_try"),
     ("Ngày chính thức",     "job_reldate_join"),
@@ -71,7 +73,7 @@ def _date_str(val):
         return val.strftime("%d/%m/%Y")
     return str(val)
 
-def _build_excel(rows, dept_map):
+def _build_excel(rows, dept_map, pos_map=None, title_map=None):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Danh sách nhân sự"
@@ -97,6 +99,10 @@ def _build_excel(rows, dept_map):
         for col_idx, (_, field) in enumerate(EXPORT_COLUMNS, 1):
             if field == "_department_name":
                 val = dept_map.get(str(p.department_id), "")
+            elif field == "_position_name":
+                val = (pos_map or {}).get(str(p.position_id), "")
+            elif field == "_job_title_name":
+                val = (title_map or {}).get(str(p.job_title_id), "")
             elif field == "_is_active":
                 val = "Hoạt động" if p.is_active else "Vô hiệu"
             elif field in ("birthday", "private_code_date", "job_date_join",
@@ -122,7 +128,7 @@ def _build_excel(rows, dept_map):
             cell.alignment = Alignment(vertical="center", wrap_text=False)
 
     # Column widths
-    col_widths = [14,22,10,13,16,13,24,12,10,24,14,14,30,30,20,14,13,13,13,13,24,16,16,30,14]
+    col_widths = [14,22,10,13,16,13,24,12,10,24,14,14,30,30,20,22,18,14,13,13,13,13,24,16,16,30,14]
     for i, w in enumerate(col_widths, 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
 
@@ -221,7 +227,13 @@ async def export_personnel(
     depts = (await db.execute(select(Department))).scalars().all()
     dept_map = {str(d.id): d.name for d in depts}
 
-    wb = _build_excel(rows, dept_map)
+    positions = (await db.execute(select(Position))).scalars().all()
+    pos_map = {str(p.id): p.title for p in positions}
+
+    job_titles = (await db.execute(select(PositionTitle))).scalars().all()
+    title_map = {str(t.id): t.title for t in job_titles}
+
+    wb = _build_excel(rows, dept_map, pos_map, title_map)
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -260,7 +272,8 @@ async def download_import_template(current_user=Depends(get_current_user)):
         "NV001", "Nguyễn Văn A", "Nam / Nữ / Khác", "dd/mm/yyyy",
         "012345678901", "dd/mm/yyyy", "Công an TP.HCM", "Việt Nam", "Kinh",
         "nv@email.com", "024...", "09x...", "Địa chỉ thường trú", "Địa chỉ hiện tại",
-        "Tên phòng ban", "Thử việc / Chính thức / Đã nghỉ / Chấm dứt",
+        "Tên phòng ban", "Tên vị trí (VD: Kỹ sư phần mềm)", "Tên chức danh (VD: Chuyên viên)",
+        "Thử việc / Chính thức / Đã nghỉ / Chấm dứt",
         "dd/mm/yyyy", "dd/mm/yyyy", "dd/mm/yyyy", "dd/mm/yyyy", "",
         "Lương cố định / Theo công / Khoán sản phẩm", "10000000", "", "Hoạt động / Vô hiệu",
     ]
@@ -270,7 +283,7 @@ async def download_import_template(current_user=Depends(get_current_user)):
         cell.font = hint_font
         cell.border = border
 
-    col_widths = [14,22,10,13,16,13,24,12,10,24,14,14,30,30,20,18,13,13,13,13,24,20,16,30,14]
+    col_widths = [14,22,10,13,16,13,24,12,10,24,14,14,30,30,20,24,20,18,13,13,13,13,24,20,16,30,14]
     for i, w in enumerate(col_widths, 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
     ws.row_dimensions[1].height = 28
@@ -311,9 +324,15 @@ async def import_personnel(
     if missing:
         raise HTTPException(status_code=400, detail=f"File thiếu cột bắt buộc: {', '.join(missing)}")
 
-    # Load departments for name → id lookup
+    # Load lookup maps: name → id
     depts = (await db.execute(select(Department))).scalars().all()
     dept_name_map = {d.name.strip().lower(): d.id for d in depts}
+
+    positions = (await db.execute(select(Position))).scalars().all()
+    pos_name_map = {p.title.strip().lower(): p.id for p in positions}
+
+    job_titles = (await db.execute(select(PositionTitle))).scalars().all()
+    title_name_map = {t.title.strip().lower(): t.id for t in job_titles}
 
     def get(row, name):
         idx = col.get(name)
@@ -347,6 +366,12 @@ async def import_personnel(
         dept_name = get(row_idx, "Phòng ban (tên)")
         dept_id = dept_name_map.get(dept_name.lower()) if dept_name else None
 
+        pos_name = get(row_idx, "Vị trí công việc (tên)")
+        pos_id = pos_name_map.get(pos_name.lower()) if pos_name else None
+
+        title_name = get(row_idx, "Chức danh (tên)")
+        title_id = title_name_map.get(title_name.lower()) if title_name else None
+
         gender_raw = (get(row_idx, "Giới tính") or "").lower()
         job_status_raw = (get(row_idx, "Trạng thái LĐ") or "").lower()
         salary_raw = (get(row_idx, "Hình thức lương") or "").lower()
@@ -368,6 +393,8 @@ async def import_personnel(
             "home_address":      get(row_idx, "Địa chỉ thường trú"),
             "current_address":   get(row_idx, "Địa chỉ hiện tại"),
             "department_id":     dept_id,
+            "position_id":       pos_id,
+            "job_title_id":      title_id,
             "job_status":        STATUS_MAP.get(job_status_raw),
             "job_date_join":     parse_date(get(row_idx, "Ngày vào làm")),
             "job_date_try":      parse_date(get(row_idx, "Ngày thử việc")),
