@@ -53,6 +53,11 @@ _doc_dir = _upload_dir.replace("/assets", "/docs")
 os.makedirs(_doc_dir, exist_ok=True)
 app.mount("/uploads/docs", StaticFiles(directory=_doc_dir), name="asset_docs")
 
+# Serve tài liệu hồ sơ nhân viên
+_personnel_dir = _upload_dir.replace("/assets", "/personnel")
+os.makedirs(_personnel_dir, exist_ok=True)
+app.mount("/uploads/personnel", StaticFiles(directory=_personnel_dir), name="personnel_docs")
+
 
 @app.get("/health")
 async def health_check():
