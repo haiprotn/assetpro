@@ -1,31 +1,30 @@
 """
 Script liên kết file cũ vào bảng personnel_documents
 ======================================================
+Đọc MySQL dump từ phần mềm cũ để xác định chính xác file → nhân viên.
+
 Cách dùng trên server:
+    # 1. Copy file SQL + thư mục files lên server trước
+    # 2. Chạy dry-run
     docker exec -it asset_backend python /app/scripts/link_existing_personnel_docs.py \
-        --root /app/uploads/personnel/linked/modules/personnel.profile \
-        --dry-run        # Xem trước, chưa lưu
+        --files-dir  /app/uploads/personnel/linked/modules \
+        --sql-file   /app/uploads/personnel/linked/officecloud_dth.personnels.sql.gz \
+        --dry-run
 
+    # 3. Chạy thật
     docker exec -it asset_backend python /app/scripts/link_existing_personnel_docs.py \
-        --root /app/uploads/personnel/linked/modules/personnel.profile
-        # Chạy thật
-
-Cấu trúc thư mục nhận diện (khi root = .../personnel.profile):
-    profile/                         → doc_type OTHER  (hồ sơ chung)
-    personnel-profile-profile/       → doc_type PROFILE
-    personnel-profile-certificate/   → doc_type CERTIFICATE
-    appmodelpersonnelprofilecert*/   → doc_type CERTIFICATE
-    contract/                        → doc_type CONTRACT
+        --files-dir  /app/uploads/personnel/linked/modules \
+        --sql-file   /app/uploads/personnel/linked/officecloud_dth.personnels.sql.gz
 """
 
 import argparse
 import asyncio
+import gzip
 import os
 import re
 import sys
 import unicodedata
 
-# Thêm app vào path
 sys.path.insert(0, "/app")
 
 from sqlalchemy import text
@@ -37,28 +36,40 @@ DATABASE_URL = os.environ.get(
     "postgresql+asyncpg://asset_user:AssetPro2026@postgres:5432/asset_management"
 )
 
-# Map pattern thư mục → doc_type (áp dụng cho rel_path kể từ --root)
+ALLOWED_EXT = {".pdf", ".jpg", ".jpeg", ".png", ".gif", ".webp",
+               ".doc", ".docx", ".xls", ".xlsx", ".JPG", ".PDF"}
+
+# Vị trí cột trong bảng personnels (0-indexed)
+# Xác định bằng cách đếm từ schema
+COL_ID    = 0
+COL_CODE  = 1
+COL_NAME  = 6    # `name`
+COL_PHOTO = 23   # `photo`
+COL_FRONT = 23   # sẽ tìm dynamic bằng tên cột
+COL_BACK  = 24
+
+# Tên cột cần lấy (parse từ schema)
+NEEDED_COLS = {
+    "photo":              "PHOTO",
+    "personnel_photo":    "PHOTO",
+    "private_code_front": "ID_CARD",
+    "private_code_back":  "ID_CARD",
+    "certificate_path":   "CERTIFICATE",
+}
+
+# Map thư mục → doc_type (fallback khi không có SQL)
 DIR_TYPE_MAP = [
-    (re.compile(r"personnel-profile-profile",           re.I), "PROFILE"),
-    (re.compile(r"personnel-profile-certificate",       re.I), "CERTIFICATE"),
-    (re.compile(r"appmodel.*certificate",               re.I), "CERTIFICATE"),
-    (re.compile(r"personnel[._-]profile[/\\].*profile", re.I), "PROFILE"),
-    (re.compile(r"personnel[._-]profile[/\\].*certif",  re.I), "CERTIFICATE"),
-    (re.compile(r"personnel[._-]profile",               re.I), "PROFILE"),
-    (re.compile(r"contract",                            re.I), "CONTRACT"),
+    (re.compile(r"personnel-profile-certificate|appmodel.*certificate", re.I), "CERTIFICATE"),
+    (re.compile(r"personnel-profile-profile",                            re.I), "PROFILE"),
+    (re.compile(r"personnel[._-]profile",                               re.I), "PROFILE"),
+    (re.compile(r"contract",                                             re.I), "CONTRACT"),
 ]
-
-ALLOWED_EXT = {".pdf", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".doc", ".docx", ".xls", ".xlsx"}
-
-# Pattern timestamp trong tên file: HH.MM.SS-DD.MM.YYYY
-_TS_RE = re.compile(r"-\d{2}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{4}")
 
 
 def _norm(s: str) -> str:
-    """Chuẩn hoá: bỏ dấu, lowercase, thay - và _ bằng khoảng trắng."""
     nfkd = unicodedata.normalize("NFKD", s)
     ascii_ = "".join(c for c in nfkd if not unicodedata.combining(c))
-    return re.sub(r"[-_]+", " ", ascii_.lower()).strip()
+    return re.sub(r"[\s\-_]+", " ", ascii_.lower()).strip()
 
 
 def guess_doc_type(rel_path: str) -> str:
@@ -69,88 +80,257 @@ def guess_doc_type(rel_path: str) -> str:
     return "OTHER"
 
 
-def _name_from_filename(fname: str) -> str:
-    """Trích tên người từ tên file bằng cách bỏ phần timestamp và extension."""
-    base = os.path.splitext(fname)[0]          # bỏ extension
-    base = _TS_RE.sub("", base)                # bỏ -HH.MM.SS-DD.MM.YYYY
-    base = re.sub(r"\d+$", "", base)           # bỏ số đuôi (v.d. NGUYEN-KIM-CHINH1)
-    return _norm(base)
+# ──────────────────────────────────────────────────────────────
+# Parse MySQL dump để lấy schema + data
+# ──────────────────────────────────────────────────────────────
+def _open_sql(sql_file: str):
+    if sql_file.endswith(".gz"):
+        return gzip.open(sql_file, "rt", encoding="utf-8", errors="replace")
+    return open(sql_file, "r", encoding="utf-8", errors="replace")
 
 
-def build_name_map(rows) -> list[tuple[str, str]]:
-    """Trả về list (normalized_name, personnel_id) sắp xếp theo độ dài tên giảm dần."""
-    result = []
-    for r in rows:
-        full = _norm(r.full_name or "")
-        if full:
-            result.append((full, str(r.id)))
-    # Tên dài hơn ưu tiên match trước (tránh match nhầm tên ngắn)
-    result.sort(key=lambda x: len(x[0]), reverse=True)
+def get_col_indices(sql_file: str) -> dict[str, int]:
+    """Đọc schema để lấy vị trí cột theo tên."""
+    col_order = []
+    in_create = False
+    with _open_sql(sql_file) as f:
+        for line in f:
+            line = line.strip()
+            if line.upper().startswith("CREATE TABLE"):
+                in_create = True
+                col_order = []
+                continue
+            if in_create:
+                if line.startswith(")"):
+                    break
+                # Dòng định nghĩa cột: `col_name` type ...
+                m = re.match(r"`(\w+)`\s+", line)
+                if m:
+                    col_order.append(m.group(1))
+    return {name: idx for idx, name in enumerate(col_order)}
+
+
+def _split_mysql_row(row_str: str) -> list[str]:
+    """Tách các giá trị trong 1 row MySQL VALUES."""
+    values = []
+    i = 0
+    s = row_str.strip()
+    # Bỏ dấu ( ) ngoài cùng
+    if s.startswith("("):
+        s = s[1:]
+    if s.endswith("),") or s.endswith(")"):
+        s = s.rstrip(",)")
+
+    while i < len(s):
+        if s[i] == '"':
+            # Chuỗi có thể chứa escape \" hoặc ""
+            j = i + 1
+            buf = []
+            while j < len(s):
+                if s[j] == '\\' and j + 1 < len(s):
+                    buf.append(s[j + 1])
+                    j += 2
+                elif s[j] == '"':
+                    j += 1
+                    break
+                else:
+                    buf.append(s[j])
+                    j += 1
+            values.append("".join(buf))
+            i = j
+            # Bỏ dấu phẩy tiếp theo
+            if i < len(s) and s[i] == ',':
+                i += 1
+        elif s[i:i+4].upper() == 'NULL':
+            values.append(None)
+            i += 4
+            if i < len(s) and s[i] == ',':
+                i += 1
+        else:
+            # Số hoặc giá trị không có dấu nháy
+            j = i
+            while j < len(s) and s[j] != ',':
+                j += 1
+            values.append(s[i:j].strip())
+            i = j
+            if i < len(s) and s[i] == ',':
+                i += 1
+    return values
+
+
+def parse_personnel_sql(sql_file: str) -> dict[str, dict]:
+    """
+    Parse file SQL và trả về:
+    {
+      old_id_str: {
+        "name": "NGUYỄN VĂN A",
+        "files": {"filename.jpg": "PHOTO", "front.jpg": "ID_CARD", ...}
+      }
+    }
+    """
+    print(f"[INFO] Đọc schema từ {os.path.basename(sql_file)}...")
+    col_idx = get_col_indices(sql_file)
+    if not col_idx:
+        print("[CẢNH BÁO] Không đọc được schema, dùng vị trí cột mặc định")
+        col_idx = {"ID": 0, "code": 1, "name": 6,
+                   "photo": 23, "private_code_front": -1, "private_code_back": -1}
+
+    print(f"[INFO] Schema: {len(col_idx)} cột. Cột cần thiết:")
+    for cname in ["ID", "name", "photo", "private_code_front", "private_code_back", "certificate_path"]:
+        print(f"       {cname} → vị trí {col_idx.get(cname, 'N/A')}")
+
+    result: dict[str, dict] = {}
+
+    print(f"[INFO] Đọc data từ {os.path.basename(sql_file)}...")
+    in_insert = False
+    with _open_sql(sql_file) as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if re.match(r"INSERT INTO `personnels`", line, re.I):
+                in_insert = True
+                continue
+            if not in_insert:
+                continue
+            if not line.strip() or line.strip().startswith("/*") or line.strip().startswith("--"):
+                continue
+            # Mỗi row bắt đầu bằng "("
+            if not line.strip().startswith("("):
+                in_insert = False
+                continue
+
+            row_str = line.strip()
+            vals = _split_mysql_row(row_str)
+            if len(vals) < max(col_idx.get("name", 6), col_idx.get("photo", 23)) + 1:
+                continue
+
+            old_id = str(vals[col_idx.get("ID", 0)] or "").strip()
+            name   = (vals[col_idx.get("name", 6)] or "").strip()
+            if not old_id or not name:
+                continue
+
+            files: dict[str, str] = {}
+            for col_name, doc_type in NEEDED_COLS.items():
+                idx = col_idx.get(col_name)
+                if idx is None or idx >= len(vals):
+                    continue
+                val = vals[idx]
+                if val and str(val).strip() and str(val).strip().lower() not in ("null", "0", ""):
+                    fname = os.path.basename(str(val).strip())
+                    if fname:
+                        files[fname.lower()] = doc_type
+
+            result[old_id] = {"name": name, "files": files}
+
+    print(f"[INFO] Đọc được {len(result)} nhân viên từ SQL dump")
     return result
 
 
-def guess_personnel_id_by_name(fname: str, name_map: list[tuple[str, str]]) -> str | None:
-    """Khớp tên nhân viên trong tên file."""
-    fname_norm = _name_from_filename(fname)
-    if not fname_norm:
-        return None
-    for name, pid in name_map:
-        # Kiểm tra tất cả các từ trong tên đều xuất hiện trong tên file
-        words = name.split()
-        if len(words) >= 2 and all(w in fname_norm for w in words):
-            return pid
-    return None
-
-
-async def run(root_dir: str, dry_run: bool):
-    if not os.path.isdir(root_dir):
-        print(f"[LỖI] Thư mục không tồn tại: {root_dir}")
+# ──────────────────────────────────────────────────────────────
+# Main
+# ──────────────────────────────────────────────────────────────
+async def run(files_dir: str, sql_file: str | None, dry_run: bool):
+    if not os.path.isdir(files_dir):
+        print(f"[LỖI] Thư mục files không tồn tại: {files_dir}")
         sys.exit(1)
+
+    # Đọc mapping từ SQL dump
+    old_personnel: dict[str, dict] = {}   # {old_id: {name, files}}
+    file_to_old: dict[str, tuple[str, str]] = {}  # {fname_lower: (old_id, doc_type)}
+
+    if sql_file and os.path.isfile(sql_file):
+        old_personnel = parse_personnel_sql(sql_file)
+        for old_id, info in old_personnel.items():
+            for fname, dtype in info["files"].items():
+                file_to_old[fname] = (old_id, dtype)
+        print(f"[INFO] File mapping từ SQL: {len(file_to_old)} files")
+    else:
+        print("[CẢNH BÁO] Không có SQL dump, sẽ match theo tên file")
 
     engine = create_async_engine(DATABASE_URL, echo=False)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session() as db:
-        # Load tất cả nhân viên: id + full_name
-        rows = (await db.execute(text("SELECT id, full_name, employee_code FROM personnel"))).fetchall()
-        name_map = build_name_map(rows)
-        print(f"[INFO] Đã load {len(name_map)} nhân viên từ DB")
+        rows = (await db.execute(
+            text("SELECT id, full_name, employee_code FROM personnel")
+        )).fetchall()
+        print(f"[INFO] Đã load {len(rows)} nhân viên từ DB mới")
 
-        # Load file đã link để tránh duplicate
+        # Map: normalized_name → new_uuid
+        name_map = {_norm(r.full_name or ""): str(r.id) for r in rows if r.full_name}
+
+        # Map: old_id → new_uuid (qua tên)
+        old_to_new: dict[str, str] = {}
+        unmatched_old = []
+        for old_id, info in old_personnel.items():
+            norm = _norm(info["name"])
+            if norm in name_map:
+                old_to_new[old_id] = name_map[norm]
+            else:
+                unmatched_old.append(f"  old_id={old_id}: {info['name']}")
+
+        if unmatched_old:
+            print(f"[CẢNH BÁO] {len(unmatched_old)} NV cũ không khớp tên trong DB mới:")
+            for s in unmatched_old[:10]:
+                print(s)
+            if len(unmatched_old) > 10:
+                print(f"  ... và {len(unmatched_old)-10} NV khác")
+
+        print(f"[INFO] Khớp {len(old_to_new)}/{len(old_personnel)} NV cũ → NV mới")
+
+        # File đã link
         existing = set(
-            r[0] for r in
-            (await db.execute(
+            r[0] for r in (await db.execute(
                 text("SELECT original_path FROM personnel_documents WHERE original_path IS NOT NULL")
             )).fetchall()
         )
-        print(f"[INFO] {len(existing)} file đã được link trước đó")
+        print(f"[INFO] {len(existing)} file đã link trước đó\n")
 
-        found = skipped = linked = unmatched = thumbs = 0
+        found = skipped = linked = unmatched = 0
 
-        for dirpath, _, filenames in os.walk(root_dir):
-            # Bỏ qua thư mục thumb (ảnh thumbnail preview)
-            rel_dir = os.path.relpath(dirpath, root_dir).replace("\\", "/")
-            if "thumb" in rel_dir.split("/"):
-                continue
+        for dirpath, dirnames, filenames in os.walk(files_dir):
+            dirnames[:] = [d for d in dirnames if d != "thumb"]
 
             for fname in filenames:
-                ext = os.path.splitext(fname)[1].lower()
-                if ext not in ALLOWED_EXT:
+                ext = os.path.splitext(fname)[1]
+                if ext.lower() not in {e.lower() for e in ALLOWED_EXT}:
                     continue
 
                 full_path = os.path.join(dirpath, fname)
-                rel_path  = os.path.relpath(full_path, root_dir).replace("\\", "/")
+                rel_path  = os.path.relpath(full_path, files_dir).replace("\\", "/")
                 found += 1
 
-                if full_path in existing or rel_path in existing:
+                if rel_path in existing:
                     skipped += 1
                     continue
 
                 doc_type     = guess_doc_type(rel_path)
-                personnel_id = guess_personnel_id_by_name(fname, name_map)
+                personnel_id = None
+                match_method = ""
+
+                # Ưu tiên 1: SQL dump mapping
+                sql_info = file_to_old.get(fname.lower())
+                if sql_info:
+                    old_id, sql_dtype = sql_info
+                    doc_type = sql_dtype
+                    personnel_id = old_to_new.get(old_id)
+                    match_method = f"sql(old_id={old_id})"
+
+                # Ưu tiên 2: match tên trong filename
+                if not personnel_id:
+                    norm_fname = _norm(re.sub(
+                        r"\d{2}[.]\d{2}[.]\d{2}[-]\d{2}[.]\d{2}[.]\d{4}", "",
+                        os.path.splitext(fname)[0]
+                    ))
+                    for norm_name, nid in sorted(name_map.items(), key=lambda x: -len(x[0])):
+                        words = norm_name.split()
+                        if len(words) >= 2 and all(w in norm_fname for w in words):
+                            personnel_id = nid
+                            match_method = f"name({norm_name})"
+                            break
 
                 if not personnel_id:
-                    print(f"  [SKIP] Không tìm được NV: {fname}")
+                    if not match_method:
+                        print(f"  [SKIP] {rel_path}")
                     unmatched += 1
                     continue
 
@@ -158,9 +338,8 @@ async def run(root_dir: str, dry_run: bool):
                 file_url = f"/uploads/personnel/linked/{rel_path}"
 
                 if dry_run:
-                    # Tìm tên NV để hiển thị
                     nv_name = next((r.full_name for r in rows if str(r.id) == personnel_id), "?")
-                    print(f"  [DRY] {doc_type:12s} | {nv_name:30s} | {fname}")
+                    print(f"  [DRY] {doc_type:12s} | {nv_name:30s} | {fname}  [{match_method}]")
                     linked += 1
                     continue
 
@@ -195,8 +374,11 @@ async def run(root_dir: str, dry_run: bool):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Link file cũ vào personnel_documents")
-    parser.add_argument("--root",    required=True, help="Thư mục gốc chứa file cũ")
-    parser.add_argument("--dry-run", action="store_true", help="Xem trước, không lưu")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--files-dir", required=True,
+                        help="Thư mục modules/ của phần mềm cũ")
+    parser.add_argument("--sql-file",  default=None,
+                        help="File SQL dump personnels (officecloud_dth.personnels.sql.gz)")
+    parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    asyncio.run(run(args.root, args.dry_run))
+    asyncio.run(run(args.files_dir, args.sql_file, args.dry_run))
