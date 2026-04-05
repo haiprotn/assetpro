@@ -4,17 +4,15 @@ Script liên kết file cũ vào bảng personnel_documents
 Đọc MySQL dump từ phần mềm cũ để xác định chính xác file → nhân viên.
 
 Cách dùng trên server:
-    # 1. Copy file SQL + thư mục files lên server trước
+    # 1. Copy file SQL + schema + thư mục files lên server trước
     # 2. Chạy dry-run
     docker exec -it asset_backend python /app/scripts/link_existing_personnel_docs.py \
-        --files-dir  /app/uploads/personnel/linked/modules \
-        --sql-file   /app/uploads/personnel/linked/officecloud_dth.personnels.sql.gz \
+        --files-dir   /app/uploads/personnel/linked/modules \
+        --sql-file    /app/uploads/personnel/linked/officecloud_dth.personnels.sql.gz \
+        --schema-file /app/uploads/personnel/linked/officecloud_dth.personnels-schema.sql.gz \
         --dry-run
 
-    # 3. Chạy thật
-    docker exec -it asset_backend python /app/scripts/link_existing_personnel_docs.py \
-        --files-dir  /app/uploads/personnel/linked/modules \
-        --sql-file   /app/uploads/personnel/linked/officecloud_dth.personnels.sql.gz
+    # 3. Chạy thật (bỏ --dry-run)
 """
 
 import argparse
@@ -158,7 +156,7 @@ def _split_mysql_row(row_str: str) -> list[str]:
     return values
 
 
-def parse_personnel_sql(sql_file: str) -> dict[str, dict]:
+def parse_personnel_sql(sql_file: str, schema_file: str | None = None) -> dict[str, dict]:
     """
     Parse file SQL và trả về:
     {
@@ -168,8 +166,10 @@ def parse_personnel_sql(sql_file: str) -> dict[str, dict]:
       }
     }
     """
-    print(f"[INFO] Đọc schema từ {os.path.basename(sql_file)}...")
-    col_idx = get_col_indices(sql_file)
+    # Đọc schema từ file riêng nếu có, nếu không thì đọc từ cùng file data
+    schema_src = schema_file if (schema_file and os.path.isfile(schema_file)) else sql_file
+    print(f"[INFO] Đọc schema từ {os.path.basename(schema_src)}...")
+    col_idx = get_col_indices(schema_src)
     if not col_idx:
         print("[CẢNH BÁO] Không đọc được schema, dùng vị trí cột mặc định")
         col_idx = {"ID": 0, "code": 1, "name": 6,
@@ -228,7 +228,7 @@ def parse_personnel_sql(sql_file: str) -> dict[str, dict]:
 # ──────────────────────────────────────────────────────────────
 # Main
 # ──────────────────────────────────────────────────────────────
-async def run(files_dir: str, sql_file: str | None, dry_run: bool):
+async def run(files_dir: str, sql_file: str | None, schema_file: str | None, dry_run: bool):
     if not os.path.isdir(files_dir):
         print(f"[LỖI] Thư mục files không tồn tại: {files_dir}")
         sys.exit(1)
@@ -238,7 +238,7 @@ async def run(files_dir: str, sql_file: str | None, dry_run: bool):
     file_to_old: dict[str, tuple[str, str]] = {}  # {fname_lower: (old_id, doc_type)}
 
     if sql_file and os.path.isfile(sql_file):
-        old_personnel = parse_personnel_sql(sql_file)
+        old_personnel = parse_personnel_sql(sql_file, schema_file)
         for old_id, info in old_personnel.items():
             for fname, dtype in info["files"].items():
                 file_to_old[fname] = (old_id, dtype)
@@ -377,8 +377,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--files-dir", required=True,
                         help="Thư mục modules/ của phần mềm cũ")
-    parser.add_argument("--sql-file",  default=None,
+    parser.add_argument("--sql-file",    default=None,
                         help="File SQL dump personnels (officecloud_dth.personnels.sql.gz)")
+    parser.add_argument("--schema-file", default=None,
+                        help="File schema riêng (officecloud_dth.personnels-schema.sql.gz)")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    asyncio.run(run(args.files_dir, args.sql_file, args.dry_run))
+    asyncio.run(run(args.files_dir, args.sql_file, args.schema_file, args.dry_run))
