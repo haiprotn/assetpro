@@ -132,7 +132,7 @@ export default function PersonnelDetailPage() {
   const { data: documents = [], refetch: refetchDocs } = useQuery({
     queryKey: ['personnel-docs', id],
     queryFn: () => personnelApi.listDocuments(id).then(r => r.data),
-    enabled: tab === 'documents',
+    enabled: tab === 'documents' || tab === 'contracts',
   })
 
   const handleUploadDoc = async (e) => {
@@ -353,6 +353,68 @@ export default function PersonnelDetailPage() {
               </table>
             </div>
           )}
+
+          {/* File hợp đồng */}
+          <div style={{ marginTop: 28 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                📝 File hợp đồng ({documents.filter(d => d.doc_type === 'CONTRACT').length})
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  value={uploadNotes} onChange={e => setUploadNotes(e.target.value)}
+                  placeholder="Ghi chú (tuỳ chọn)"
+                  style={{ padding: '6px 10px', borderRadius: 7, border: '1px solid #e2e8f0', fontSize: 12, width: 180 }}
+                />
+                <input ref={fileInputRef} type="file" onChange={handleUploadDoc} style={{ display: 'none' }}
+                  accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx" />
+                <button
+                  onClick={() => { setUploadDocType('CONTRACT'); fileInputRef.current?.click() }}
+                  disabled={uploading}
+                  style={{ padding: '7px 14px', background: '#1a2744', color: 'white', border: 'none', borderRadius: 7, cursor: 'pointer', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap' }}
+                >{uploading ? '⏳...' : '⬆️ Upload file hợp đồng'}</button>
+              </div>
+            </div>
+
+            {documents.filter(d => d.doc_type === 'CONTRACT').length === 0 ? (
+              <div style={{ padding: '16px', background: '#f8fafc', borderRadius: 8, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+                Chưa có file hợp đồng nào được upload
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {documents.filter(d => d.doc_type === 'CONTRACT').map(doc => (
+                  <div key={doc.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                    border: '1px solid #e2e8f0', borderRadius: 8, background: '#fafafa',
+                  }}>
+                    <span style={{ fontSize: 20 }}>
+                      {doc.file_name.endsWith('.pdf') ? '📄'
+                        : doc.file_name.match(/\.(doc|docx)$/) ? '📝'
+                        : isImage(doc.file_type, doc.file_name) ? '🖼️' : '📁'}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1a2744', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {doc.file_name}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                        {humanSize(doc.file_size_bytes)}{doc.notes ? ` · ${doc.notes}` : ''}{doc.source === 'LINKED' ? ' · 🔗 File cũ' : ''}
+                      </div>
+                    </div>
+                    <a
+                      href={`${API_BASE}${doc.file_url}`}
+                      target="_blank" rel="noreferrer"
+                      download={doc.file_name}
+                      style={{ fontSize: 12, color: '#2563eb', textDecoration: 'none', padding: '4px 10px', border: '1px solid #bfdbfe', borderRadius: 6 }}
+                    >⬇️ Tải</a>
+                    <button
+                      onClick={() => { if (window.confirm(`Xóa "${doc.file_name}"?`)) deleteDocMutation.mutate(doc.id) }}
+                      style={{ fontSize: 12, color: '#dc2626', background: '#fef2f2', border: 'none', borderRadius: 6, cursor: 'pointer', padding: '4px 8px' }}
+                    >🗑️</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
