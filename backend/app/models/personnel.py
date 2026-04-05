@@ -85,5 +85,24 @@ class EmployeeContract(Base):
     job_title: Mapped[Optional["PositionTitle"]] = relationship("PositionTitle")
 
 
+class PersonnelDocument(Base):
+    """Tài liệu hồ sơ nhân viên (ảnh, CCCD, bằng cấp, chứng chỉ, hợp đồng scan...)"""
+    __tablename__ = "personnel_documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    personnel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("personnel.id", ondelete="CASCADE"), nullable=False)
+    doc_type: Mapped[str] = mapped_column(String(50), nullable=False, default="OTHER")
+    # PHOTO / ID_CARD / DEGREE / CERTIFICATE / CONTRACT / PROFILE / OTHER
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)       # tên file gốc
+    file_url: Mapped[str] = mapped_column(Text, nullable=False)               # đường dẫn lưu trữ
+    file_type: Mapped[Optional[str]] = mapped_column(String(100))             # MIME type
+    file_size_bytes: Mapped[Optional[int]] = mapped_column(Integer)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    source: Mapped[Optional[str]] = mapped_column(String(50), default="UPLOAD")  # UPLOAD / LINKED
+    original_path: Mapped[Optional[str]] = mapped_column(Text)               # đường dẫn gốc khi link file cũ
+    uploaded_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 # Import Department for relationship (avoid circular import)
 from app.models.assets import Department  # noqa: E402

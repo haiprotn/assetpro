@@ -119,6 +119,19 @@ export const personnelApi = {
     fd.append('file', file)
     return api.post(`/personnel/import?update_existing=${updateExisting}&has_hint_row=${hasHintRow}`, fd)
   },
+  exportExcel: (params) => api.get('/personnel/export', { params, responseType: 'blob' }),
+  downloadTemplate: () => api.get('/personnel/import-template', { responseType: 'blob' }),
+  // Documents
+  listDocuments:  (id) => api.get(`/personnel/${id}/documents`),
+  uploadDocument: (id, file, docType, notes) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const params = new URLSearchParams({ doc_type: docType })
+    if (notes) params.append('notes', notes)
+    return api.post(`/personnel/${id}/documents?${params}`, fd)
+  },
+  deleteDocument: (docId) => api.delete(`/personnel/documents/${docId}`),
+  listDocumentTypes: () => api.get('/personnel/documents/types'),
 }
 
 export const supplierApi = {

@@ -3,6 +3,7 @@ Personnel API Endpoints - Quản lý nhân sự
 """
 import io
 import math
+import os
 import uuid
 from datetime import date
 from typing import Optional
@@ -10,14 +11,14 @@ from typing import Optional
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
 
 from app.db.session import get_db
 from app.core.auth import get_current_user
 from app.models.assets import Personnel, Department
-from app.models.personnel import Position, PositionTitle, ContractType, EmployeeContract
+from app.models.personnel import Position, PositionTitle, ContractType, EmployeeContract, PersonnelDocument
 from app.schemas.personnel import (
     PersonnelCreate, PersonnelUpdate, PersonnelOut, PersonnelDetail, PaginatedPersonnel,
     PositionCreate, PositionUpdate, PositionOut,
@@ -25,6 +26,18 @@ from app.schemas.personnel import (
     ContractTypeCreate, ContractTypeUpdate, ContractTypeOut,
     EmployeeContractCreate, EmployeeContractUpdate, EmployeeContractOut,
 )
+
+_PERSONNEL_UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "/app/uploads/assets").replace("/assets", "/personnel")
+
+DOC_TYPE_LABELS = {
+    "PHOTO":       "Ảnh đại diện",
+    "ID_CARD":     "CMND / CCCD",
+    "DEGREE":      "Bằng cấp",
+    "CERTIFICATE": "Chứng chỉ",
+    "CONTRACT":    "Hợp đồng",
+    "PROFILE":     "Hồ sơ nhân viên",
+    "OTHER":       "Khác",
+}
 
 router = APIRouter()
 
@@ -843,3 +856,113 @@ async def update_contract_type(
     await db.commit()
     await db.refresh(c)
     return c
+
+
+# ════════════════════════════════════════════════════════════
+# PERSONNEL DOCUMENTS - Tài liệu hồ sơ nhân viên
+# ════════════════════════════════════════════════════════════
+
+@router.get("/{personnel_id}/documents", summary="Danh sách tài liệu của nhân viên")
+async def list_documents(
+    personnel_id: uuid.UUID,
+    doc_type: Optional[str] = Query(None),
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    q = select(PersonnelDocument).where(PersonnelDocument.personnel_id == personnel_id)
+    if doc_type:
+        q = q.where(PersonnelDocument.doc_type == doc_type)
+    q = q.order_by(PersonnelDocument.uploaded_at.desc())
+    rows = (await db.execute(q)).scalars().all()
+    return [
+        {
+            "id": str(r.id),
+            "personnel_id": str(r.personnel_id),
+            "doc_type": r.doc_type,
+            "doc_type_label": DOC_TYPE_LABELS.get(r.doc_type, r.doc_type),
+            "file_name": r.file_name,
+            "file_url": r.file_url,
+            "file_type": r.file_type,
+            "file_size_bytes": r.file_size_bytes,
+            "notes": r.notes,
+            "source": r.source,
+            "uploaded_at": r.uploaded_at.isoformat() if r.uploaded_at else None,
+        }
+        for r in rows
+    ]
+
+
+@router.post("/{personnel_id}/documents", status_code=201, summary="Upload tài liệu nhân viên")
+async def upload_document(
+    personnel_id: uuid.UUID,
+    file: UploadFile = File(...),
+    doc_type: str = Query("OTHER"),
+    notes: Optional[str] = Query(None),
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    p = (await db.execute(select(Personnel).where(Personnel.id == personnel_id))).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="Không tìm thấy nhân viên")
+
+    content = await file.read()
+    if len(content) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File quá lớn (tối đa 20MB)")
+
+    save_dir = os.path.join(_PERSONNEL_UPLOAD_DIR, str(personnel_id))
+    os.makedirs(save_dir, exist_ok=True)
+
+    ext = os.path.splitext(file.filename or "")[1].lower() or ".bin"
+    unique_name = f"{uuid.uuid4().hex}{ext}"
+    filepath = os.path.join(save_dir, unique_name)
+    with open(filepath, "wb") as f:
+        f.write(content)
+
+    doc = PersonnelDocument(
+        personnel_id=personnel_id,
+        doc_type=doc_type,
+        file_name=file.filename or unique_name,
+        file_url=f"/uploads/personnel/{personnel_id}/{unique_name}",
+        file_type=file.content_type,
+        file_size_bytes=len(content),
+        notes=notes,
+        source="UPLOAD",
+        uploaded_by=current_user.id,
+    )
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+    return {
+        "id": str(doc.id),
+        "file_name": doc.file_name,
+        "file_url": doc.file_url,
+        "doc_type": doc.doc_type,
+        "doc_type_label": DOC_TYPE_LABELS.get(doc_type, doc_type),
+        "file_size_bytes": doc.file_size_bytes,
+        "uploaded_at": doc.uploaded_at.isoformat(),
+    }
+
+
+@router.delete("/documents/{doc_id}", status_code=204, summary="Xóa tài liệu")
+async def delete_document(
+    doc_id: uuid.UUID,
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    doc = (await db.execute(select(PersonnelDocument).where(PersonnelDocument.id == doc_id))).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài liệu")
+
+    # Xóa file vật lý nếu là file upload (không xóa file cũ được link)
+    if doc.source == "UPLOAD":
+        phys = _PERSONNEL_UPLOAD_DIR + doc.file_url.replace("/uploads/personnel", "")
+        if os.path.exists(phys):
+            os.remove(phys)
+
+    await db.delete(doc)
+    await db.commit()
+
+
+@router.get("/documents/types", summary="Danh sách loại tài liệu")
+async def list_doc_types(current_user=Depends(get_current_user)):
+    return [{"value": k, "label": v} for k, v in DOC_TYPE_LABELS.items()]

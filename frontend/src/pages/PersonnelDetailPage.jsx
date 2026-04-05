@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { personnelApi, departmentApi } from '../services/api'
@@ -70,10 +70,41 @@ const fmt = (dateStr) => dateStr ? new Date(dateStr).toLocaleDateString('vi-VN')
 const fmtMoney = (val) => val != null ? Number(val).toLocaleString('vi-VN') + ' ₫' : null
 
 const TABS = [
-  { key: 'info', label: '👤 Thông tin cá nhân' },
-  { key: 'job', label: '💼 Công việc' },
+  { key: 'info',      label: '👤 Thông tin cá nhân' },
+  { key: 'job',       label: '💼 Công việc' },
   { key: 'contracts', label: '📋 Hợp đồng' },
+  { key: 'documents', label: '📁 Tài liệu hồ sơ' },
 ]
+
+const DOC_TYPES = [
+  { value: 'PHOTO',       label: 'Ảnh đại diện' },
+  { value: 'ID_CARD',     label: 'CMND / CCCD' },
+  { value: 'DEGREE',      label: 'Bằng cấp' },
+  { value: 'CERTIFICATE', label: 'Chứng chỉ' },
+  { value: 'CONTRACT',    label: 'Hợp đồng' },
+  { value: 'PROFILE',     label: 'Hồ sơ nhân viên' },
+  { value: 'OTHER',       label: 'Khác' },
+]
+
+const DOC_TYPE_ICON = {
+  PHOTO: '🖼️', ID_CARD: '🪪', DEGREE: '🎓',
+  CERTIFICATE: '📜', CONTRACT: '📝', PROFILE: '🗂️', OTHER: '📄',
+}
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL?.replace('/api/v1', '') || 'http://localhost:8001'
+
+function humanSize(bytes) {
+  if (!bytes) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB'
+}
+
+function isImage(fileType, fileName) {
+  if (fileType?.startsWith('image/')) return true
+  const ext = (fileName || '').split('.').pop().toLowerCase()
+  return ['jpg','jpeg','png','gif','webp'].includes(ext)
+}
 
 export default function PersonnelDetailPage() {
   const { id } = useParams()
@@ -82,6 +113,11 @@ export default function PersonnelDetailPage() {
   const [tab, setTab] = useState('info')
   const [showEdit, setShowEdit] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [uploadDocType, setUploadDocType] = useState('OTHER')
+  const [uploadNotes, setUploadNotes] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [previewDoc, setPreviewDoc] = useState(null)
+  const fileInputRef = useRef(null)
 
   const { data: person, isLoading, isError } = useQuery({
     queryKey: ['personnel', id],
@@ -91,6 +127,33 @@ export default function PersonnelDetailPage() {
   const { data: departments = [] } = useQuery({
     queryKey: ['departments'],
     queryFn: () => departmentApi.list().then(r => r.data),
+  })
+
+  const { data: documents = [], refetch: refetchDocs } = useQuery({
+    queryKey: ['personnel-docs', id],
+    queryFn: () => personnelApi.listDocuments(id).then(r => r.data),
+    enabled: tab === 'documents',
+  })
+
+  const handleUploadDoc = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setUploading(true)
+    try {
+      await personnelApi.uploadDocument(id, file, uploadDocType, uploadNotes)
+      refetchDocs()
+      setUploadNotes('')
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Upload thất bại')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const deleteDocMutation = useMutation({
+    mutationFn: (docId) => personnelApi.deleteDocument(docId),
+    onSuccess: () => refetchDocs(),
   })
 
   const deleteContractMutation = useMutation({
@@ -290,6 +353,131 @@ export default function PersonnelDetailPage() {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Tab: Tài liệu hồ sơ */}
+      {tab === 'documents' && (
+        <div style={{ background: 'white', borderRadius: '0 0 12px 12px', border: '1px solid #e2e8f0', padding: '20px 24px' }}>
+          {/* Upload bar */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b' }}>Loại tài liệu</label>
+              <select
+                value={uploadDocType} onChange={e => setUploadDocType(e.target.value)}
+                style={{ padding: '8px 10px', borderRadius: 7, border: '1px solid #e2e8f0', fontSize: 13 }}
+              >
+                {DOC_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 160 }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b' }}>Ghi chú (tuỳ chọn)</label>
+              <input
+                value={uploadNotes} onChange={e => setUploadNotes(e.target.value)}
+                placeholder="Mô tả tài liệu..."
+                style={{ padding: '8px 10px', borderRadius: 7, border: '1px solid #e2e8f0', fontSize: 13 }}
+              />
+            </div>
+            <input ref={fileInputRef} type="file" onChange={handleUploadDoc} style={{ display: 'none' }}
+              accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx" />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              style={{ padding: '9px 18px', background: '#1a2744', color: 'white', border: 'none', borderRadius: 7, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}
+            >{uploading ? '⏳ Đang upload...' : '⬆️ Upload tài liệu'}</button>
+          </div>
+
+          {documents.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>
+              <div style={{ fontSize: 40, marginBottom: 8 }}>📁</div>
+              <div>Chưa có tài liệu nào</div>
+            </div>
+          ) : (
+            // Group by doc_type
+            DOC_TYPES.map(dt => {
+              const group = documents.filter(d => d.doc_type === dt.value)
+              if (!group.length) return null
+              return (
+                <div key={dt.value} style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 }}>
+                    {DOC_TYPE_ICON[dt.value]} {dt.label} ({group.length})
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
+                    {group.map(doc => (
+                      <div key={doc.id} style={{
+                        border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden',
+                        background: '#fafafa', display: 'flex', flexDirection: 'column',
+                      }}>
+                        {/* Thumbnail */}
+                        <div
+                          onClick={() => setPreviewDoc(doc)}
+                          style={{ height: 90, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', overflow: 'hidden' }}
+                        >
+                          {isImage(doc.file_type, doc.file_name) ? (
+                            <img
+                              src={`${API_BASE}${doc.file_url}`}
+                              alt={doc.file_name}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              onError={e => { e.target.style.display = 'none' }}
+                            />
+                          ) : (
+                            <span style={{ fontSize: 32 }}>
+                              {doc.file_name.endsWith('.pdf') ? '📄'
+                                : doc.file_name.match(/\.(doc|docx)$/) ? '📝'
+                                : doc.file_name.match(/\.(xls|xlsx)$/) ? '📊' : '📁'}
+                            </span>
+                          )}
+                        </div>
+                        {/* Info */}
+                        <div style={{ padding: '8px 8px 6px' }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: '#1a2744', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={doc.file_name}>
+                            {doc.file_name}
+                          </div>
+                          <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{humanSize(doc.file_size_bytes)}</div>
+                          {doc.notes && <div style={{ fontSize: 10, color: '#64748b', marginTop: 2, fontStyle: 'italic' }}>{doc.notes}</div>}
+                          <div style={{ fontSize: 10, color: '#94a3b8' }}>{doc.source === 'LINKED' ? '🔗 File cũ' : '⬆️ Upload'}</div>
+                        </div>
+                        {/* Actions */}
+                        <div style={{ display: 'flex', borderTop: '1px solid #f1f5f9', padding: '4px 6px', gap: 4 }}>
+                          <a
+                            href={`${API_BASE}${doc.file_url}`}
+                            download={doc.file_name}
+                            target="_blank" rel="noreferrer"
+                            style={{ flex: 1, textAlign: 'center', fontSize: 11, color: '#2563eb', textDecoration: 'none', padding: '3px 0' }}
+                          >⬇️ Tải</a>
+                          <button
+                            onClick={() => { if (window.confirm(`Xóa "${doc.file_name}"?`)) deleteDocMutation.mutate(doc.id) }}
+                            style={{ flex: 1, fontSize: 11, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: '3px 0' }}
+                          >🗑️ Xóa</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+      )}
+
+      {/* Preview modal */}
+      {previewDoc && (
+        <div
+          onClick={() => setPreviewDoc(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200 }}
+        >
+          <div onClick={e => e.stopPropagation()} style={{ maxWidth: '90vw', maxHeight: '90vh', position: 'relative' }}>
+            {isImage(previewDoc.file_type, previewDoc.file_name) ? (
+              <img src={`${API_BASE}${previewDoc.file_url}`} alt={previewDoc.file_name}
+                style={{ maxWidth: '85vw', maxHeight: '85vh', borderRadius: 8, display: 'block' }} />
+            ) : (
+              <iframe src={`${API_BASE}${previewDoc.file_url}`} title={previewDoc.file_name}
+                style={{ width: '80vw', height: '80vh', border: 'none', borderRadius: 8, background: 'white' }} />
+            )}
+            <button onClick={() => setPreviewDoc(null)}
+              style={{ position: 'absolute', top: -12, right: -12, background: 'white', border: 'none', borderRadius: '50%', width: 28, height: 28, cursor: 'pointer', fontWeight: 800, fontSize: 16 }}>×</button>
+            <div style={{ color: 'white', textAlign: 'center', marginTop: 8, fontSize: 13 }}>{previewDoc.file_name}</div>
+          </div>
         </div>
       )}
 
