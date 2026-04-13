@@ -183,14 +183,5 @@ export const userApi = {
   delete:        (id)               => api.delete(`/users/${id}`),
 }
 
-// ── Timesheet / Chấm công ────────────────────────────────────
-export const timesheetApi = {
-  list:               (year, month)       => api.get('/timesheet', { params: { year, month } }),
-  upsertEntry:        (data)              => api.post('/timesheet/entries', data),
-  deleteEntry:        (id)                => api.delete(`/timesheet/entries/${id}`),
-  summary:            (year, month)       => api.get('/timesheet/summary', { params: { year, month } }),
-  setPersonnelType:   (id, type)          => api.patch(`/timesheet/personnel/${id}/type`, { timesheet_type: type }),
-  export:             (year, month)       => api.get('/timesheet/export', { params: { year, month }, responseType: 'blob' }),
-}
 
 export default api

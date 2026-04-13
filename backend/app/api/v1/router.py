@@ -19,7 +19,6 @@ from app.api.v1.endpoints import (
     qr,
     import_assets,
     users,
-    timesheet,
 )
 
 api_router = APIRouter()
@@ -45,6 +44,3 @@ api_router.include_router(suppliers.router, prefix="/suppliers", tags=["🏭 Sup
 api_router.include_router(qr.router, prefix="/qr", tags=["📱 QR Code"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["📊 Dashboard & Analytics"])
 api_router.include_router(import_assets.router, prefix="/data", tags=["📥 Import / Export"])
-
-# HR
-api_router.include_router(timesheet.router, prefix="/timesheet", tags=["🗓️ Timesheet / Chấm công"])
