@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useState, useEffect, useRef } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { personnelApi } from '../services/api'
 
 const GENDER_OPTIONS = [
@@ -120,11 +120,53 @@ function toFormValues(item) {
   }
 }
 
+// Mini quick-add form cho vị trí / chức danh
+function QuickAddPopover({ title, codePlaceholder, titlePlaceholder, onSave, onClose, saving }) {
+  const [code,  setCode]  = useState('')
+  const [label, setLabel] = useState('')
+  const ref = useRef(null)
+
+  useEffect(() => {
+    ref.current?.focus()
+  }, [])
+
+  return (
+    <div style={{
+      position: 'absolute', zIndex: 300, top: '100%', left: 0, right: 0, marginTop: 4,
+      background: 'white', border: '1px solid #bfdbfe', borderRadius: 8,
+      boxShadow: '0 6px 20px rgba(0,0,0,0.12)', padding: 12,
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#1a2744', marginBottom: 8 }}>➕ {title}</div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+        <input ref={ref} value={code} onChange={e => setCode(e.target.value)}
+          placeholder={codePlaceholder} onKeyDown={e => e.key === 'Escape' && onClose()}
+          style={{ flex: '0 0 90px', padding: '6px 8px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 12 }} />
+        <input value={label} onChange={e => setLabel(e.target.value)}
+          placeholder={titlePlaceholder} onKeyDown={e => e.key === 'Enter' && label.trim() && onSave(code, label)}
+          style={{ flex: 1, padding: '6px 8px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 12 }} />
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button
+          onClick={() => label.trim() && onSave(code, label)}
+          disabled={saving || !label.trim()}
+          style={{ flex: 1, padding: '6px 0', background: '#1a2744', color: 'white', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: !label.trim() ? 0.5 : 1 }}
+        >{saving ? '...' : 'Lưu'}</button>
+        <button onClick={onClose}
+          style={{ padding: '6px 10px', background: '#f1f5f9', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
+        >Huỷ</button>
+      </div>
+    </div>
+  )
+}
+
 export default function PersonnelFormModal({ item, departments = [], onClose, onSaved }) {
   const isEdit = !!item
+  const qc = useQueryClient()
   const [tab, setTab] = useState('personal')
   const [form, setForm] = useState(() => toFormValues(item))
   const [errors, setErrors] = useState({})
+  const [showAddPosition, setShowAddPosition] = useState(false)
+  const [showAddJobTitle, setShowAddJobTitle] = useState(false)
 
   useEffect(() => {
     setForm(toFormValues(item))
@@ -140,6 +182,30 @@ export default function PersonnelFormModal({ item, departments = [], onClose, on
   const { data: jobTitles = [] } = useQuery({
     queryKey: ['job-titles-list'],
     queryFn: () => personnelApi.listJobTitles().then(r => r.data),
+  })
+
+  const addPositionMutation = useMutation({
+    mutationFn: ({ code, title }) => personnelApi.createPosition({
+      code: code || `POS_${Date.now()}`, title, is_active: true,
+    }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['positions-list'] })
+      setForm(f => ({ ...f, position_id: res.data.id }))
+      setShowAddPosition(false)
+    },
+    onError: (err) => alert(err.response?.data?.detail || 'Không thể thêm vị trí'),
+  })
+
+  const addJobTitleMutation = useMutation({
+    mutationFn: ({ code, title }) => personnelApi.createJobTitle({
+      code: code || undefined, title, is_active: true,
+    }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['job-titles-list'] })
+      setForm(f => ({ ...f, job_title_id: res.data.id }))
+      setShowAddJobTitle(false)
+    },
+    onError: (err) => alert(err.response?.data?.detail || 'Không thể thêm chức danh'),
   })
 
   const mutation = useMutation({
@@ -395,20 +461,60 @@ export default function PersonnelFormModal({ item, departments = [], onClose, on
                 </select>
               </Row>
               <Row label="Vị trí công việc">
-                <select value={form.position_id} onChange={set('position_id')} style={selectStyle}>
-                  <option value="">-- Chọn vị trí --</option>
-                  {positions.filter(p => p.is_active).map(p => (
-                    <option key={p.id} value={p.id}>{p.title}</option>
-                  ))}
-                </select>
+                <div style={{ position: 'relative' }}>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <select value={form.position_id} onChange={set('position_id')} style={{ ...selectStyle, flex: 1 }}>
+                      <option value="">-- Chọn vị trí --</option>
+                      {positions.filter(p => p.is_active).map(p => (
+                        <option key={p.id} value={p.id}>{p.title}</option>
+                      ))}
+                    </select>
+                    <button type="button"
+                      onClick={() => { setShowAddPosition(v => !v); setShowAddJobTitle(false) }}
+                      title="Thêm vị trí mới"
+                      style={{ padding: '0 10px', background: showAddPosition ? '#1a2744' : '#f1f5f9', color: showAddPosition ? 'white' : '#1a2744', border: '1px solid #e2e8f0', borderRadius: 7, cursor: 'pointer', fontWeight: 700, fontSize: 16, flexShrink: 0 }}>
+                      +
+                    </button>
+                  </div>
+                  {showAddPosition && (
+                    <QuickAddPopover
+                      title="Thêm vị trí công việc"
+                      codePlaceholder="Mã (VD: KT)"
+                      titlePlaceholder="Tên vị trí *"
+                      saving={addPositionMutation.isPending}
+                      onSave={(code, title) => addPositionMutation.mutate({ code, title })}
+                      onClose={() => setShowAddPosition(false)}
+                    />
+                  )}
+                </div>
               </Row>
               <Row label="Chức danh">
-                <select value={form.job_title_id} onChange={set('job_title_id')} style={selectStyle}>
-                  <option value="">-- Chọn chức danh --</option>
-                  {jobTitles.filter(t => t.is_active).map(t => (
-                    <option key={t.id} value={t.id}>{t.title}</option>
-                  ))}
-                </select>
+                <div style={{ position: 'relative' }}>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <select value={form.job_title_id} onChange={set('job_title_id')} style={{ ...selectStyle, flex: 1 }}>
+                      <option value="">-- Chọn chức danh --</option>
+                      {jobTitles.filter(t => t.is_active).map(t => (
+                        <option key={t.id} value={t.id}>{t.title}</option>
+                      ))}
+                    </select>
+                    <button type="button"
+                      onClick={() => { setShowAddJobTitle(v => !v); setShowAddPosition(false) }}
+                      title="Thêm chức danh mới"
+                      style={{ padding: '0 10px', background: showAddJobTitle ? '#1a2744' : '#f1f5f9', color: showAddJobTitle ? 'white' : '#1a2744', border: '1px solid #e2e8f0', borderRadius: 7, cursor: 'pointer', fontWeight: 700, fontSize: 16, flexShrink: 0 }}>
+                      +
+                    </button>
+                  </div>
+                  {showAddJobTitle && (
+                    <QuickAddPopover
+                      title="Thêm chức danh"
+                      codePlaceholder="Mã (tuỳ chọn)"
+                      titlePlaceholder="Tên chức danh *"
+                      saving={addJobTitleMutation.isPending}
+                      onSave={(code, title) => addJobTitleMutation.mutate({ code, title })}
+                      onClose={() => setShowAddJobTitle(false)}
+                    />
+                  )}
+                </div>
               </Row>
               <Row label="Trạng thái lao động">
                 <select value={form.job_status} onChange={set('job_status')} style={selectStyle}>
