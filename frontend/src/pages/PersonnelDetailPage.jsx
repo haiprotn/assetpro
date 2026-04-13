@@ -11,12 +11,6 @@ const JOB_STATUS_LABEL = {
   TERMINATED: { label: 'Chấm dứt',  color: '#6b7280', bg: '#f3f4f6' },
 }
 
-const CONTRACT_STATUS_LABEL = {
-  ACTIVE:     { label: 'Hiệu lực',   color: '#16a34a', bg: '#dcfce7' },
-  EXPIRED:    { label: 'Hết hạn',    color: '#f59e0b', bg: '#fef3c7' },
-  LIQUIDATED: { label: 'Thanh lý',   color: '#6b7280', bg: '#f3f4f6' },
-  PENDING:    { label: 'Chờ duyệt',  color: '#3b82f6', bg: '#eff6ff' },
-}
 
 const GENDER_LABEL = { MALE: 'Nam', FEMALE: 'Nữ', OTHER: 'Khác' }
 const MARITAL_LABEL = { SINGLE: 'Độc thân', MARRIED: 'Đã kết hôn', DIVORCED: 'Ly hôn', WIDOWED: 'Góa' }
@@ -72,7 +66,6 @@ const fmtMoney = (val) => val != null ? Number(val).toLocaleString('vi-VN') + ' 
 const TABS = [
   { key: 'info',      label: '👤 Thông tin cá nhân' },
   { key: 'job',       label: '💼 Công việc' },
-  { key: 'contracts', label: '📋 Hợp đồng' },
   { key: 'documents', label: '📁 Tài liệu hồ sơ' },
 ]
 
@@ -111,7 +104,6 @@ export default function PersonnelDetailPage() {
   const qc = useQueryClient()
   const [tab, setTab] = useState('info')
   const [showEdit, setShowEdit] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(null)
   const [uploadDocType, setUploadDocType] = useState('OTHER')
   const [uploadNotes, setUploadNotes] = useState('')
   const [uploading, setUploading] = useState(false)
@@ -133,7 +125,7 @@ export default function PersonnelDetailPage() {
   const { data: documents = [], refetch: refetchDocs } = useQuery({
     queryKey: ['personnel-docs', id],
     queryFn: () => personnelApi.listDocuments(id).then(r => r.data),
-    enabled: tab === 'documents' || tab === 'contracts',
+    enabled: tab === 'documents',
   })
 
   const doUpload = async (file, docType) => {
@@ -168,14 +160,6 @@ export default function PersonnelDetailPage() {
   const deleteDocMutation = useMutation({
     mutationFn: (docId) => personnelApi.deleteDocument(docId),
     onSuccess: () => refetchDocs(),
-  })
-
-  const deleteContractMutation = useMutation({
-    mutationFn: (cid) => personnelApi.deleteContract(cid),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['personnel', id] })
-      setConfirmDelete(null)
-    },
   })
 
   if (isLoading) return (
@@ -253,13 +237,7 @@ export default function PersonnelDetailPage() {
               border: 'none', borderBottom: tab === t.key ? '2px solid #1a2744' : '2px solid transparent',
               background: 'none', cursor: 'pointer',
             }}
-          >{t.label}
-            {t.key === 'contracts' && person.contracts?.length > 0 && (
-              <span style={{ marginLeft: 6, background: '#e2e8f0', color: '#475569', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>
-                {person.contracts.length}
-              </span>
-            )}
-          </button>
+          >{t.label}</button>
         ))}
       </div>
 
@@ -346,112 +324,6 @@ export default function PersonnelDetailPage() {
               <InfoRow label="Hình thức lương" value={SALARY_METHOD_LABEL[person.salary_method]} />
               <InfoRow label="Mức lương thực nhận" value={fmtMoney(person.salary_real)} />
             </Section>
-          </div>
-        </div>
-      )}
-
-      {/* Tab: Hợp đồng */}
-      {tab === 'contracts' && (
-        <div style={{ background: 'white', borderRadius: '0 0 12px 12px', border: '1px solid #e2e8f0', padding: '20px 24px' }}>
-          {(!person.contracts || person.contracts.length === 0) ? (
-            <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>
-              <div style={{ fontSize: 36, marginBottom: 8 }}>📋</div>
-              <div>Chưa có hợp đồng nào</div>
-            </div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                    {['Số hợp đồng', 'Loại hợp đồng', 'Từ ngày', 'Đến ngày', 'Lương', 'Phụ cấp', 'Trạng thái', ''].map(h => (
-                      <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, color: '#475569', fontSize: 12 }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {person.contracts.map((c, i) => (
-                    <tr key={c.id} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? 'white' : '#fafafa' }}>
-                      <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: '#1a2744', fontWeight: 600 }}>{c.contract_code}</td>
-                      <td style={{ padding: '10px 12px', color: '#475569' }}>{c.contract_type?.title || '—'}</td>
-                      <td style={{ padding: '10px 12px', color: '#475569' }}>{fmt(c.date_start)}</td>
-                      <td style={{ padding: '10px 12px', color: '#475569' }}>{c.date_finish ? fmt(c.date_finish) : <span style={{ color: '#94a3b8' }}>Không xác định</span>}</td>
-                      <td style={{ padding: '10px 12px', color: '#475569' }}>{c.salary ? Number(c.salary).toLocaleString('vi-VN') + ' ₫' : '—'}</td>
-                      <td style={{ padding: '10px 12px', color: '#475569' }}>{c.salary_allowances ? Number(c.salary_allowances).toLocaleString('vi-VN') + ' ₫' : '—'}</td>
-                      <td style={{ padding: '10px 12px' }}><Badge value={c.status} map={CONTRACT_STATUS_LABEL} /></td>
-                      <td style={{ padding: '10px 12px' }}>
-                        <button
-                          onClick={() => setConfirmDelete(c)}
-                          style={{ padding: '4px 8px', fontSize: 11, background: '#fef2f2', border: 'none', borderRadius: 5, cursor: 'pointer', color: '#dc2626' }}
-                          title="Xóa hợp đồng"
-                        >🗑️</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* File hợp đồng */}
-          <div style={{ marginTop: 28 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                📝 File hợp đồng ({documents.filter(d => d.doc_type === 'CONTRACT').length})
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input
-                  value={uploadNotes} onChange={e => setUploadNotes(e.target.value)}
-                  placeholder="Ghi chú (tuỳ chọn)"
-                  style={{ padding: '6px 10px', borderRadius: 7, border: '1px solid #e2e8f0', fontSize: 12, width: 180 }}
-                />
-                <input ref={fileInputRef} type="file" onChange={handleUploadDoc} style={{ display: 'none' }}
-                  accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx" />
-                <button
-                  onClick={() => { setUploadDocType('CONTRACT'); fileInputRef.current?.click() }}
-                  disabled={uploading}
-                  style={{ padding: '7px 14px', background: '#1a2744', color: 'white', border: 'none', borderRadius: 7, cursor: 'pointer', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap' }}
-                >{uploading ? '⏳...' : '⬆️ Upload file hợp đồng'}</button>
-              </div>
-            </div>
-
-            {documents.filter(d => d.doc_type === 'CONTRACT').length === 0 ? (
-              <div style={{ padding: '16px', background: '#f8fafc', borderRadius: 8, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
-                Chưa có file hợp đồng nào được upload
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {documents.filter(d => d.doc_type === 'CONTRACT').map(doc => (
-                  <div key={doc.id} style={{
-                    display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
-                    border: '1px solid #e2e8f0', borderRadius: 8, background: '#fafafa',
-                  }}>
-                    <span style={{ fontSize: 20 }}>
-                      {doc.file_name.endsWith('.pdf') ? '📄'
-                        : doc.file_name.match(/\.(doc|docx)$/) ? '📝'
-                        : isImage(doc.file_type, doc.file_name) ? '🖼️' : '📁'}
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1a2744', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {doc.file_name}
-                      </div>
-                      <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                        {humanSize(doc.file_size_bytes)}{doc.notes ? ` · ${doc.notes}` : ''}{doc.source === 'LINKED' ? ' · 🔗 File cũ' : ''}
-                      </div>
-                    </div>
-                    <a
-                      href={`${API_BASE}${doc.file_url}`}
-                      target="_blank" rel="noreferrer"
-                      download={doc.file_name}
-                      style={{ fontSize: 12, color: '#2563eb', textDecoration: 'none', padding: '4px 10px', border: '1px solid #bfdbfe', borderRadius: 6 }}
-                    >⬇️ Tải</a>
-                    <button
-                      onClick={() => { if (window.confirm(`Xóa "${doc.file_name}"?`)) deleteDocMutation.mutate(doc.id) }}
-                      style={{ fontSize: 12, color: '#dc2626', background: '#fef2f2', border: 'none', borderRadius: 6, cursor: 'pointer', padding: '4px 8px' }}
-                    >🗑️</button>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -622,32 +494,6 @@ export default function PersonnelDetailPage() {
         />
       )}
 
-      {/* Confirm xóa hợp đồng */}
-      {confirmDelete && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100,
-        }}>
-          <div style={{ background: 'white', borderRadius: 14, padding: 28, width: 360 }}>
-            <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 12 }}>⚠️ Xóa hợp đồng</div>
-            <p style={{ color: '#475569', fontSize: 14 }}>
-              Xóa hợp đồng <strong>{confirmDelete.contract_code}</strong>?<br />
-              Hành động này không thể khôi phục.
-            </p>
-            <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
-              <button
-                onClick={() => deleteContractMutation.mutate(confirmDelete.id)}
-                disabled={deleteContractMutation.isPending}
-                style={{ padding: '9px 20px', background: '#dc2626', color: 'white', border: 'none', borderRadius: 7, cursor: 'pointer', fontWeight: 700 }}
-              >{deleteContractMutation.isPending ? 'Đang xóa...' : 'Xóa'}</button>
-              <button
-                onClick={() => setConfirmDelete(null)}
-                style={{ padding: '9px 16px', background: '#f1f5f9', border: 'none', borderRadius: 7, cursor: 'pointer' }}
-              >Huỷ</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
