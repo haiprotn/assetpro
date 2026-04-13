@@ -77,19 +77,18 @@ const TABS = [
 ]
 
 const DOC_TYPES = [
-  { value: 'PHOTO',       label: 'Ảnh đại diện' },
-  { value: 'ID_CARD',     label: 'CMND / CCCD' },
-  { value: 'DEGREE',      label: 'Bằng cấp' },
-  { value: 'CERTIFICATE', label: 'Chứng chỉ' },
-  { value: 'CONTRACT',    label: 'Hợp đồng' },
-  { value: 'PROFILE',     label: 'Hồ sơ nhân viên' },
-  { value: 'OTHER',       label: 'Khác' },
+  { value: 'ID_CARD',     label: 'CMND / CCCD',            icon: '🪪', color: '#3b82f6', bg: '#eff6ff' },
+  { value: 'RESUME',      label: 'Sơ yếu lý lịch',         icon: '📋', color: '#8b5cf6', bg: '#f5f3ff' },
+  { value: 'DEGREE',      label: 'Bằng cấp / Chứng chỉ',   icon: '🎓', color: '#0891b2', bg: '#ecfeff' },
+  { value: 'HEALTH_CERT', label: 'Giấy khám sức khỏe',     icon: '🏥', color: '#16a34a', bg: '#f0fdf4' },
+  { value: 'HOUSEHOLD',   label: 'Hộ khẩu / Hộ chiếu',     icon: '🏠', color: '#ea580c', bg: '#fff7ed' },
+  { value: 'PROFILE',     label: 'Hồ sơ nhân viên',         icon: '🗂️', color: '#64748b', bg: '#f8fafc' },
+  { value: 'CONTRACT',    label: 'Hợp đồng lao động',       icon: '📝', color: '#b45309', bg: '#fffbeb' },
+  { value: 'PHOTO',       label: 'Ảnh',                     icon: '🖼️', color: '#db2777', bg: '#fdf2f8' },
+  { value: 'OTHER',       label: 'Tài liệu khác',           icon: '📄', color: '#475569', bg: '#f8fafc' },
 ]
 
-const DOC_TYPE_ICON = {
-  PHOTO: '🖼️', ID_CARD: '🪪', DEGREE: '🎓',
-  CERTIFICATE: '📜', CONTRACT: '📝', PROFILE: '🗂️', OTHER: '📄',
-}
+const DOC_TYPE_ICON = Object.fromEntries(DOC_TYPES.map(d => [d.value, d.icon]))
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL?.replace('/api/v1', '') || 'http://localhost:8001'
 
@@ -116,7 +115,9 @@ export default function PersonnelDetailPage() {
   const [uploadDocType, setUploadDocType] = useState('OTHER')
   const [uploadNotes, setUploadNotes] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [uploadingType, setUploadingType] = useState(null)
   const [previewDoc, setPreviewDoc] = useState(null)
+  const [dragOverType, setDragOverType] = useState(null)
   const fileInputRef = useRef(null)
 
   const { data: person, isLoading, isError } = useQuery({
@@ -135,20 +136,33 @@ export default function PersonnelDetailPage() {
     enabled: tab === 'documents' || tab === 'contracts',
   })
 
-  const handleUploadDoc = async (e) => {
-    const file = e.target.files?.[0]
+  const doUpload = async (file, docType) => {
     if (!file) return
-    e.target.value = ''
     setUploading(true)
+    setUploadingType(docType)
     try {
-      await personnelApi.uploadDocument(id, file, uploadDocType, uploadNotes)
+      await personnelApi.uploadDocument(id, file, docType, '')
       refetchDocs()
-      setUploadNotes('')
     } catch (err) {
       alert(err.response?.data?.detail || 'Upload thất bại')
     } finally {
       setUploading(false)
+      setUploadingType(null)
     }
+  }
+
+  const handleUploadDoc = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    await doUpload(file, uploadDocType)
+  }
+
+  const handleDrop = async (e, docType) => {
+    e.preventDefault()
+    setDragOverType(null)
+    const file = e.dataTransfer.files?.[0]
+    if (file) await doUpload(file, docType)
   }
 
   const deleteDocMutation = useMutation({
@@ -445,104 +459,131 @@ export default function PersonnelDetailPage() {
       {/* Tab: Tài liệu hồ sơ */}
       {tab === 'documents' && (
         <div style={{ background: 'white', borderRadius: '0 0 12px 12px', border: '1px solid #e2e8f0', padding: '20px 24px' }}>
-          {/* Upload bar */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b' }}>Loại tài liệu</label>
-              <select
-                value={uploadDocType} onChange={e => setUploadDocType(e.target.value)}
-                style={{ padding: '8px 10px', borderRadius: 7, border: '1px solid #e2e8f0', fontSize: 13 }}
-              >
-                {DOC_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 160 }}>
-              <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b' }}>Ghi chú (tuỳ chọn)</label>
-              <input
-                value={uploadNotes} onChange={e => setUploadNotes(e.target.value)}
-                placeholder="Mô tả tài liệu..."
-                style={{ padding: '8px 10px', borderRadius: 7, border: '1px solid #e2e8f0', fontSize: 13 }}
-              />
-            </div>
-            <input ref={fileInputRef} type="file" onChange={handleUploadDoc} style={{ display: 'none' }}
-              accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx" />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              style={{ padding: '9px 18px', background: '#1a2744', color: 'white', border: 'none', borderRadius: 7, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}
-            >{uploading ? '⏳ Đang upload...' : '⬆️ Upload tài liệu'}</button>
-          </div>
+          <input ref={fileInputRef} type="file" onChange={handleUploadDoc} style={{ display: 'none' }}
+            accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx" />
 
-          {documents.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>
-              <div style={{ fontSize: 40, marginBottom: 8 }}>📁</div>
-              <div>Chưa có tài liệu nào</div>
-            </div>
-          ) : (
-            // Group by doc_type
-            DOC_TYPES.map(dt => {
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {DOC_TYPES.map(dt => {
               const group = documents.filter(d => d.doc_type === dt.value)
-              if (!group.length) return null
+              const isDragging = dragOverType === dt.value
+              const isUploading = uploadingType === dt.value
+
               return (
-                <div key={dt.value} style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 }}>
-                    {DOC_TYPE_ICON[dt.value]} {dt.label} ({group.length})
+                <div key={dt.value} style={{
+                  border: `1px solid ${isDragging ? dt.color : '#e2e8f0'}`,
+                  borderRadius: 10,
+                  background: isDragging ? dt.bg : 'white',
+                  transition: 'border-color 0.15s, background 0.15s',
+                  overflow: 'hidden',
+                }}
+                  onDragOver={e => { e.preventDefault(); setDragOverType(dt.value) }}
+                  onDragLeave={() => setDragOverType(null)}
+                  onDrop={e => handleDrop(e, dt.value)}
+                >
+                  {/* Header */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 14px',
+                    background: group.length > 0 ? dt.bg : '#fafafa',
+                    borderBottom: group.length > 0 ? `1px solid ${dt.color}22` : 'none',
+                  }}>
+                    <span style={{ fontSize: 18 }}>{dt.icon}</span>
+                    <div style={{ flex: 1 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#1a2744' }}>{dt.label}</span>
+                      {group.length > 0 && (
+                        <span style={{
+                          marginLeft: 8, fontSize: 11, fontWeight: 700,
+                          color: dt.color, background: dt.bg,
+                          border: `1px solid ${dt.color}44`,
+                          padding: '1px 7px', borderRadius: 10,
+                        }}>{group.length} file</span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => { setUploadDocType(dt.value); fileInputRef.current?.click() }}
+                      disabled={uploading}
+                      style={{
+                        padding: '5px 12px', fontSize: 12, fontWeight: 700,
+                        background: isUploading ? '#e2e8f0' : dt.color,
+                        color: 'white', border: 'none', borderRadius: 6,
+                        cursor: uploading ? 'not-allowed' : 'pointer',
+                        opacity: uploading && !isUploading ? 0.5 : 1,
+                        display: 'flex', alignItems: 'center', gap: 4,
+                      }}
+                    >
+                      {isUploading ? '⏳' : '⬆️'} Upload
+                    </button>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
-                    {group.map(doc => (
-                      <div key={doc.id} style={{
-                        border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden',
-                        background: '#fafafa', display: 'flex', flexDirection: 'column',
-                      }}>
-                        {/* Thumbnail */}
-                        <div
-                          onClick={() => setPreviewDoc(doc)}
-                          style={{ height: 90, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', overflow: 'hidden' }}
-                        >
-                          {isImage(doc.file_type, doc.file_name) ? (
-                            <img
-                              src={`${API_BASE}${doc.file_url}`}
-                              alt={doc.file_name}
-                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                              onError={e => { e.target.style.display = 'none' }}
-                            />
-                          ) : (
-                            <span style={{ fontSize: 32 }}>
-                              {doc.file_name.endsWith('.pdf') ? '📄'
-                                : doc.file_name.match(/\.(doc|docx)$/) ? '📝'
-                                : doc.file_name.match(/\.(xls|xlsx)$/) ? '📊' : '📁'}
-                            </span>
-                          )}
-                        </div>
-                        {/* Info */}
-                        <div style={{ padding: '8px 8px 6px' }}>
-                          <div style={{ fontSize: 11, fontWeight: 600, color: '#1a2744', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={doc.file_name}>
-                            {doc.file_name}
+
+                  {/* File list */}
+                  {group.length > 0 && (
+                    <div>
+                      {group.map((doc, i) => (
+                        <div key={doc.id} style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '8px 14px',
+                          borderBottom: i < group.length - 1 ? '1px solid #f1f5f9' : 'none',
+                          background: i % 2 === 0 ? 'white' : '#fafafa',
+                        }}>
+                          {/* File icon / thumbnail */}
+                          <div
+                            onClick={() => setPreviewDoc(doc)}
+                            style={{ width: 36, height: 36, borderRadius: 6, overflow: 'hidden', flexShrink: 0, cursor: 'pointer', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            {isImage(doc.file_type, doc.file_name) ? (
+                              <img src={`${API_BASE}${doc.file_url}`} alt={doc.file_name}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                onError={e => { e.target.style.display = 'none' }} />
+                            ) : (
+                              <span style={{ fontSize: 18 }}>
+                                {doc.file_name.endsWith('.pdf') ? '📄'
+                                  : doc.file_name.match(/\.(doc|docx)$/) ? '📝'
+                                  : doc.file_name.match(/\.(xls|xlsx)$/) ? '📊'
+                                  : isImage(null, doc.file_name) ? '🖼️' : '📁'}
+                              </span>
+                            )}
                           </div>
-                          <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{humanSize(doc.file_size_bytes)}</div>
-                          {doc.notes && <div style={{ fontSize: 10, color: '#64748b', marginTop: 2, fontStyle: 'italic' }}>{doc.notes}</div>}
-                          <div style={{ fontSize: 10, color: '#94a3b8' }}>{doc.source === 'LINKED' ? '🔗 File cũ' : '⬆️ Upload'}</div>
-                        </div>
-                        {/* Actions */}
-                        <div style={{ display: 'flex', borderTop: '1px solid #f1f5f9', padding: '4px 6px', gap: 4 }}>
-                          <a
-                            href={`${API_BASE}${doc.file_url}`}
-                            download={doc.file_name}
-                            target="_blank" rel="noreferrer"
-                            style={{ flex: 1, textAlign: 'center', fontSize: 11, color: '#2563eb', textDecoration: 'none', padding: '3px 0' }}
-                          >⬇️ Tải</a>
+
+                          {/* Info */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div
+                              onClick={() => setPreviewDoc(doc)}
+                              style={{ fontSize: 13, fontWeight: 600, color: '#1a2744', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                              title={doc.file_name}
+                            >
+                              {doc.file_name}
+                            </div>
+                            <div style={{ fontSize: 11, color: '#94a3b8', display: 'flex', gap: 8 }}>
+                              {humanSize(doc.file_size_bytes) && <span>{humanSize(doc.file_size_bytes)}</span>}
+                              {doc.notes && <span style={{ fontStyle: 'italic', color: '#64748b' }}>{doc.notes}</span>}
+                              {doc.source === 'LINKED' && <span>🔗 File cũ</span>}
+                            </div>
+                          </div>
+
+                          {/* Actions */}
+                          <a href={`${API_BASE}${doc.file_url}`} target="_blank" rel="noreferrer" download={doc.file_name}
+                            style={{ fontSize: 12, color: '#2563eb', textDecoration: 'none', padding: '4px 10px', border: '1px solid #bfdbfe', borderRadius: 6, flexShrink: 0 }}>
+                            ⬇️ Tải
+                          </a>
                           <button
                             onClick={() => { if (window.confirm(`Xóa "${doc.file_name}"?`)) deleteDocMutation.mutate(doc.id) }}
-                            style={{ flex: 1, fontSize: 11, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: '3px 0' }}
-                          >🗑️ Xóa</button>
+                            style={{ padding: '4px 8px', fontSize: 12, color: '#dc2626', background: '#fef2f2', border: 'none', borderRadius: 6, cursor: 'pointer', flexShrink: 0 }}
+                          >🗑️</button>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Drop hint (only when empty) */}
+                  {group.length === 0 && (
+                    <div style={{ padding: '10px 14px', fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>
+                      {isDragging ? '📂 Thả file vào đây...' : 'Kéo thả file vào đây hoặc nhấn Upload'}
+                    </div>
+                  )}
                 </div>
               )
-            })
-          )}
+            })}
+          </div>
         </div>
       )}
 
