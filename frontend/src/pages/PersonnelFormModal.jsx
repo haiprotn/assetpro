@@ -32,12 +32,48 @@ const SALARY_METHOD_OPTIONS = [
   { value: 'PIECE', label: 'Khoán sản phẩm' },
 ]
 
-const TABS = [
+const FORM_TABS = [
   { key: 'personal', label: '👤 Cá nhân' },
-  { key: 'contact', label: '📞 Liên hệ' },
-  { key: 'job', label: '💼 Công việc' },
-  { key: 'salary', label: '💰 Lương & Mô tả' },
+  { key: 'contact',  label: '📞 Liên hệ' },
+  { key: 'job',      label: '💼 Công việc' },
+  { key: 'salary',   label: '💰 Lương & Mô tả' },
+  { key: 'docs',     label: '📁 Tài liệu' },
 ]
+
+const DOC_TYPES = [
+  { value: 'ID_CARD',     label: 'CMND / CCCD',           icon: '🪪', color: '#3b82f6', bg: '#eff6ff' },
+  { value: 'RESUME',      label: 'Sơ yếu lý lịch',        icon: '📋', color: '#8b5cf6', bg: '#f5f3ff' },
+  { value: 'DEGREE',      label: 'Bằng cấp / Chứng chỉ',  icon: '🎓', color: '#0891b2', bg: '#ecfeff' },
+  { value: 'HEALTH_CERT', label: 'Giấy khám sức khỏe',    icon: '🏥', color: '#16a34a', bg: '#f0fdf4' },
+  { value: 'HOUSEHOLD',   label: 'Hộ khẩu / Hộ chiếu',    icon: '🏠', color: '#ea580c', bg: '#fff7ed' },
+  { value: 'PROFILE',     label: 'Hồ sơ nhân viên',        icon: '🗂️', color: '#64748b', bg: '#f8fafc' },
+  { value: 'CONTRACT',    label: 'Hợp đồng lao động',      icon: '📝', color: '#b45309', bg: '#fffbeb' },
+  { value: 'PHOTO',       label: 'Ảnh',                    icon: '🖼️', color: '#db2777', bg: '#fdf2f8' },
+  { value: 'OTHER',       label: 'Tài liệu khác',          icon: '📄', color: '#475569', bg: '#f8fafc' },
+]
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL?.replace('/api/v1', '') || 'http://localhost:8001'
+
+function humanSize(bytes) {
+  if (!bytes) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB'
+}
+
+function isImage(fileType, fileName) {
+  if (fileType?.startsWith('image/')) return true
+  const ext = (fileName || '').split('.').pop().toLowerCase()
+  return ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)
+}
+
+function fileIcon(fileName) {
+  if (fileName.endsWith('.pdf')) return '📄'
+  if (fileName.match(/\.(doc|docx)$/)) return '📝'
+  if (fileName.match(/\.(xls|xlsx)$/)) return '📊'
+  if (isImage(null, fileName)) return '🖼️'
+  return '📁'
+}
 
 function Row({ label, required, children }) {
   return (
@@ -167,11 +203,22 @@ export default function PersonnelFormModal({ item, departments = [], onClose, on
   const [errors, setErrors] = useState({})
   const [showAddPosition, setShowAddPosition] = useState(false)
   const [showAddJobTitle, setShowAddJobTitle] = useState(false)
+  // Sau khi tạo mới xong, lưu id để upload tài liệu
+  const [savedId, setSavedId] = useState(item?.id || null)
+  const [saved, setSaved] = useState(isEdit)
+  // Upload state
+  const [uploading, setUploading] = useState(false)
+  const [uploadingType, setUploadingType] = useState(null)
+  const [dragOverType, setDragOverType] = useState(null)
+  const fileInputRef = useRef(null)
+  const [uploadDocType, setUploadDocType] = useState('OTHER')
 
   useEffect(() => {
     setForm(toFormValues(item))
     setErrors({})
     setTab('personal')
+    setSavedId(item?.id || null)
+    setSaved(!!item)
   }, [item])
 
   const { data: positions = [] } = useQuery({
@@ -208,11 +255,62 @@ export default function PersonnelFormModal({ item, departments = [], onClose, on
     onError: (err) => alert(err.response?.data?.detail || 'Không thể thêm chức danh'),
   })
 
+  // Documents
+  const { data: documents = [], refetch: refetchDocs } = useQuery({
+    queryKey: ['personnel-docs-modal', savedId],
+    queryFn: () => personnelApi.listDocuments(savedId).then(r => r.data),
+    enabled: !!savedId && tab === 'docs',
+  })
+
+  const deleteDocMutation = useMutation({
+    mutationFn: (docId) => personnelApi.deleteDocument(docId),
+    onSuccess: () => refetchDocs(),
+  })
+
+  const doUpload = async (file, docType) => {
+    if (!file || !savedId) return
+    setUploading(true)
+    setUploadingType(docType)
+    try {
+      await personnelApi.uploadDocument(savedId, file, docType, '')
+      refetchDocs()
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Upload thất bại')
+    } finally {
+      setUploading(false)
+      setUploadingType(null)
+    }
+  }
+
+  const handleFileInput = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    await doUpload(file, uploadDocType)
+  }
+
+  const handleDrop = async (e, docType) => {
+    e.preventDefault()
+    setDragOverType(null)
+    const file = e.dataTransfer.files?.[0]
+    if (file) await doUpload(file, docType)
+  }
+
   const mutation = useMutation({
     mutationFn: (payload) => isEdit
       ? personnelApi.update(item.id, payload)
       : personnelApi.create(payload),
-    onSuccess: () => onSaved(),
+    onSuccess: (res) => {
+      if (!isEdit) {
+        // Thêm mới: lưu id, chuyển sang tab tài liệu
+        setSavedId(res.data.id)
+        setSaved(true)
+        setTab('docs')
+        qc.invalidateQueries({ queryKey: ['personnel'] })
+      } else {
+        onSaved()
+      }
+    },
     onError: (err) => {
       const detail = err.response?.data?.detail
       if (typeof detail === 'string') setErrors({ _global: detail })
@@ -283,18 +381,29 @@ export default function PersonnelFormModal({ item, departments = [], onClose, on
 
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid #f1f5f9', padding: '0 24px' }}>
-          {TABS.map(t => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              style={{
-                padding: '10px 14px', fontSize: 12, fontWeight: tab === t.key ? 700 : 500,
-                color: tab === t.key ? '#1a2744' : '#64748b',
-                border: 'none', borderBottom: tab === t.key ? '2px solid #1a2744' : '2px solid transparent',
-                background: 'none', cursor: 'pointer',
-              }}
-            >{t.label}</button>
-          ))}
+          {FORM_TABS.map(t => {
+            // Tab tài liệu chỉ hiện khi đã lưu được id
+            if (t.key === 'docs' && !saved) return null
+            return (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                style={{
+                  padding: '10px 14px', fontSize: 12, fontWeight: tab === t.key ? 700 : 500,
+                  color: tab === t.key ? '#1a2744' : '#64748b',
+                  border: 'none', borderBottom: tab === t.key ? '2px solid #1a2744' : '2px solid transparent',
+                  background: 'none', cursor: 'pointer',
+                }}
+              >
+                {t.label}
+                {t.key === 'docs' && documents.length > 0 && (
+                  <span style={{ marginLeft: 5, background: '#e2e8f0', color: '#475569', borderRadius: 10, padding: '1px 6px', fontSize: 10, fontWeight: 700 }}>
+                    {documents.length}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
 
         {/* Error global */}
@@ -570,6 +679,100 @@ export default function PersonnelFormModal({ item, departments = [], onClose, on
               </div>
             </div>
           )}
+
+          {/* Tab: Tài liệu hồ sơ */}
+          {tab === 'docs' && (
+            <div>
+              {/* Banner thêm mới vừa xong */}
+              {!isEdit && saved && (
+                <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#15803d', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  ✅ Đã tạo nhân viên thành công! Bạn có thể đính kèm tài liệu ngay bên dưới.
+                </div>
+              )}
+
+              <input ref={fileInputRef} type="file" onChange={handleFileInput} style={{ display: 'none' }}
+                accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx" />
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {DOC_TYPES.map(dt => {
+                  const group = documents.filter(d => d.doc_type === dt.value)
+                  const isDragging = dragOverType === dt.value
+                  const isUploadingThis = uploadingType === dt.value
+
+                  return (
+                    <div key={dt.value} style={{
+                      border: `1px solid ${isDragging ? dt.color : '#e2e8f0'}`,
+                      borderRadius: 8, overflow: 'hidden',
+                      background: isDragging ? dt.bg : 'white',
+                      transition: 'border-color 0.15s, background 0.15s',
+                    }}
+                      onDragOver={e => { e.preventDefault(); setDragOverType(dt.value) }}
+                      onDragLeave={() => setDragOverType(null)}
+                      onDrop={e => handleDrop(e, dt.value)}
+                    >
+                      {/* Header row */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+                        background: group.length > 0 ? dt.bg : '#fafafa',
+                        borderBottom: group.length > 0 ? `1px solid ${dt.color}22` : 'none',
+                      }}>
+                        <span>{dt.icon}</span>
+                        <span style={{ flex: 1, fontSize: 12, fontWeight: 700, color: '#1a2744' }}>{dt.label}</span>
+                        {group.length > 0 && (
+                          <span style={{ fontSize: 10, fontWeight: 700, color: dt.color, background: 'white', border: `1px solid ${dt.color}44`, padding: '1px 6px', borderRadius: 8 }}>
+                            {group.length}
+                          </span>
+                        )}
+                        <button
+                          onClick={() => { setUploadDocType(dt.value); fileInputRef.current?.click() }}
+                          disabled={uploading}
+                          style={{
+                            padding: '4px 10px', fontSize: 11, fontWeight: 700,
+                            background: isUploadingThis ? '#e2e8f0' : dt.color,
+                            color: 'white', border: 'none', borderRadius: 5,
+                            cursor: uploading ? 'not-allowed' : 'pointer',
+                            opacity: uploading && !isUploadingThis ? 0.5 : 1,
+                          }}
+                        >{isUploadingThis ? '⏳' : '⬆️'} Upload</button>
+                      </div>
+
+                      {/* Files */}
+                      {group.map((doc, i) => (
+                        <div key={doc.id} style={{
+                          display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px',
+                          borderBottom: i < group.length - 1 ? '1px solid #f1f5f9' : 'none',
+                          background: i % 2 === 0 ? 'white' : '#fafafa',
+                        }}>
+                          <span style={{ fontSize: 16, flexShrink: 0 }}>{fileIcon(doc.file_name)}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: '#1a2744', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={doc.file_name}>
+                              {doc.file_name}
+                            </div>
+                            <div style={{ fontSize: 10, color: '#94a3b8' }}>{humanSize(doc.file_size_bytes)}</div>
+                          </div>
+                          <a href={`${API_BASE}${doc.file_url}`} target="_blank" rel="noreferrer" download={doc.file_name}
+                            style={{ fontSize: 11, color: '#2563eb', textDecoration: 'none', padding: '3px 8px', border: '1px solid #bfdbfe', borderRadius: 5, flexShrink: 0 }}>
+                            ⬇️
+                          </a>
+                          <button
+                            onClick={() => { if (window.confirm(`Xóa "${doc.file_name}"?`)) deleteDocMutation.mutate(doc.id) }}
+                            style={{ fontSize: 11, color: '#dc2626', background: '#fef2f2', border: 'none', borderRadius: 5, cursor: 'pointer', padding: '3px 7px', flexShrink: 0 }}
+                          >🗑️</button>
+                        </div>
+                      ))}
+
+                      {/* Empty hint */}
+                      {group.length === 0 && (
+                        <div style={{ padding: '6px 12px', fontSize: 11, color: '#94a3b8' }}>
+                          {isDragging ? '📂 Thả file vào đây...' : 'Kéo thả hoặc nhấn Upload'}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -580,8 +783,8 @@ export default function PersonnelFormModal({ item, departments = [], onClose, on
           <button
             onClick={onClose}
             style={{ padding: '9px 18px', background: '#f1f5f9', border: 'none', borderRadius: 7, cursor: 'pointer', fontSize: 13 }}
-          >Huỷ</button>
-          <button
+          >{tab === 'docs' && !isEdit ? 'Hoàn tất' : 'Huỷ'}</button>
+          {(tab !== 'docs' || isEdit) && <button
             onClick={handleSubmit}
             disabled={mutation.isPending}
             style={{
@@ -589,7 +792,7 @@ export default function PersonnelFormModal({ item, departments = [], onClose, on
               border: 'none', borderRadius: 7, cursor: mutation.isPending ? 'not-allowed' : 'pointer',
               fontSize: 13, fontWeight: 700, opacity: mutation.isPending ? 0.7 : 1,
             }}
-          >{mutation.isPending ? 'Đang lưu...' : isEdit ? 'Lưu thay đổi' : 'Thêm nhân viên'}</button>
+          >{mutation.isPending ? 'Đang lưu...' : isEdit ? 'Lưu thay đổi' : 'Thêm nhân viên'}</button>}
         </div>
       </div>
     </div>
