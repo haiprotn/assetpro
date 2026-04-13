@@ -184,4 +184,12 @@ export const userApi = {
 }
 
 
+// ── Timesheet (Chấm công) ────────────────────────────────────
+export const timesheetApi = {
+  list:      (params) => api.get('/timesheet', { params }),
+  bulkSave:  (rows)   => api.post('/timesheet/rows/bulk', rows),
+  deleteRow: (id)     => api.delete(`/timesheet/rows/${id}`),
+  export:    (params) => api.get('/timesheet/export', { params, responseType: 'blob' }),
+}
+
 export default api
