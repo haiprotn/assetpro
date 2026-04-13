@@ -210,6 +210,21 @@ class Personnel(Base):
     salary_method: Mapped[Optional[str]] = mapped_column(String(30))   # FIXED / TIMESHEET / PIECE
     salary_real: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 2))
 
+    # ── Học vấn & Chuyên môn ───────────────────────────────
+    education_level: Mapped[Optional[str]] = mapped_column(String(100))    # Trình độ văn hóa
+    professional_level: Mapped[Optional[str]] = mapped_column(String(100)) # Trình độ chuyên môn
+    training_school: Mapped[Optional[str]] = mapped_column(String(255))    # Trường đào tạo
+    work_history: Mapped[Optional[str]] = mapped_column(Text)              # Quá trình học tập và công tác
+
+    # ── Bảo hiểm & Thuế ────────────────────────────────────
+    tax_code: Mapped[Optional[str]] = mapped_column(String(50))            # MST cá nhân
+    social_insurance_number: Mapped[Optional[str]] = mapped_column(String(50))  # Số sổ BHXH
+    labor_contract_number: Mapped[Optional[str]] = mapped_column(String(100))   # Số hợp đồng lao động
+
+    # ── Liên hệ khẩn cấp ───────────────────────────────────
+    emergency_phone_1: Mapped[Optional[str]] = mapped_column(String(30))   # SĐT người thân (1)
+    emergency_phone_2: Mapped[Optional[str]] = mapped_column(String(30))   # SĐT người thân (2)
+
     # ── Khác ───────────────────────────────────────────────
     description: Mapped[Optional[str]] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

@@ -278,6 +278,30 @@ export default function PersonnelDetailPage() {
               </Section>
             </div>
           </div>
+          {(person.education_level || person.professional_level || person.training_school || person.work_history) && (
+            <Section title="Học vấn & Chuyên môn">
+              <InfoRow label="Trình độ văn hóa"    value={person.education_level} />
+              <InfoRow label="Trình độ chuyên môn"  value={person.professional_level} />
+              <InfoRow label="Trường đào tạo"       value={person.training_school} />
+              {person.work_history && (
+                <div style={{ padding: '7px 0', borderBottom: '1px solid #f8fafc' }}>
+                  <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600, marginBottom: 4 }}>Quá trình học tập và công tác</div>
+                  <div style={{ fontSize: 13, color: '#1a2744', whiteSpace: 'pre-wrap' }}>{person.work_history}</div>
+                </div>
+              )}
+            </Section>
+          )}
+
+          {(person.tax_code || person.social_insurance_number || person.labor_contract_number || person.emergency_phone_1 || person.emergency_phone_2) && (
+            <Section title="Bảo hiểm, Thuế & Khẩn cấp">
+              <InfoRow label="MST cá nhân"           value={person.tax_code} />
+              <InfoRow label="Số sổ BHXH"            value={person.social_insurance_number} />
+              <InfoRow label="Số HĐLĐ"               value={person.labor_contract_number} />
+              <InfoRow label="SĐT người thân (1)"    value={person.emergency_phone_1} />
+              <InfoRow label="SĐT người thân (2)"    value={person.emergency_phone_2} />
+            </Section>
+          )}
+
           {person.description && (
             <Section title="Ghi chú">
               <div style={{ fontSize: 13, color: '#475569', whiteSpace: 'pre-wrap' }}>{person.description}</div>

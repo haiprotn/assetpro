@@ -218,6 +218,21 @@ class PersonnelBase(BaseModel):
     salary_method: Optional[str] = Field(None, description="FIXED / TIMESHEET / PIECE")
     salary_real: Optional[Decimal] = None
 
+    # Học vấn & Chuyên môn
+    education_level: Optional[str] = None
+    professional_level: Optional[str] = None
+    training_school: Optional[str] = None
+    work_history: Optional[str] = None
+
+    # Bảo hiểm & Thuế
+    tax_code: Optional[str] = None
+    social_insurance_number: Optional[str] = None
+    labor_contract_number: Optional[str] = None
+
+    # Liên hệ khẩn cấp
+    emergency_phone_1: Optional[str] = None
+    emergency_phone_2: Optional[str] = None
+
     description: Optional[str] = None
     is_active: bool = True
 
@@ -253,6 +268,15 @@ class PersonnelUpdate(BaseModel):
     job_out_reason: Optional[str] = None
     salary_method: Optional[str] = None
     salary_real: Optional[Decimal] = None
+    education_level: Optional[str] = None
+    professional_level: Optional[str] = None
+    training_school: Optional[str] = None
+    work_history: Optional[str] = None
+    tax_code: Optional[str] = None
+    social_insurance_number: Optional[str] = None
+    labor_contract_number: Optional[str] = None
+    emergency_phone_1: Optional[str] = None
+    emergency_phone_2: Optional[str] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
 

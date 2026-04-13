@@ -36,6 +36,7 @@ const TABS = [
   { key: 'personal', label: '👤 Cá nhân' },
   { key: 'contact', label: '📞 Liên hệ' },
   { key: 'job', label: '💼 Công việc' },
+  { key: 'education', label: '📚 Học vấn & BH' },
   { key: 'salary', label: '💰 Lương & Mô tả' },
 ]
 
@@ -69,6 +70,9 @@ const EMPTY_FORM = {
   department_id: '', position_id: '', job_title_id: '',
   job_status: '', job_date_join: '', job_date_try: '', job_reldate_join: '',
   job_date_out: '', job_out_reason: '',
+  education_level: '', professional_level: '', training_school: '', work_history: '',
+  tax_code: '', social_insurance_number: '', labor_contract_number: '',
+  emergency_phone_1: '', emergency_phone_2: '',
   salary_method: '', salary_real: '',
   description: '', is_active: true,
 }
@@ -101,6 +105,15 @@ function toFormValues(item) {
     job_reldate_join: dateStr(item.job_reldate_join),
     job_date_out: dateStr(item.job_date_out),
     job_out_reason: item.job_out_reason || '',
+    education_level: item.education_level || '',
+    professional_level: item.professional_level || '',
+    training_school: item.training_school || '',
+    work_history: item.work_history || '',
+    tax_code: item.tax_code || '',
+    social_insurance_number: item.social_insurance_number || '',
+    labor_contract_number: item.labor_contract_number || '',
+    emergency_phone_1: item.emergency_phone_1 || '',
+    emergency_phone_2: item.emergency_phone_2 || '',
     salary_method: item.salary_method || '',
     salary_real: item.salary_real != null ? String(item.salary_real) : '',
     description: item.description || '',
@@ -167,6 +180,9 @@ export default function PersonnelFormModal({ item, departments = [], onClose, on
       'home_address', 'current_address', 'department_id', 'position_id', 'job_title_id',
       'job_status', 'job_date_join', 'job_date_try', 'job_reldate_join',
       'job_date_out', 'job_out_reason', 'salary_method', 'description',
+      'education_level', 'professional_level', 'training_school', 'work_history',
+      'tax_code', 'social_insurance_number', 'labor_contract_number',
+      'emergency_phone_1', 'emergency_phone_2',
     ]
     nullableFields.forEach(f => { if (payload[f] === '') payload[f] = null })
     payload.salary_real = payload.salary_real !== '' ? Number(payload.salary_real) : null
@@ -372,6 +388,67 @@ export default function PersonnelFormModal({ item, departments = [], onClose, on
                   />
                 </Row>
               </div>
+            </div>
+          )}
+
+          {/* Tab: Học vấn & Bảo hiểm */}
+          {tab === 'education' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <Row label="Trình độ văn hóa">
+                <input value={form.education_level} onChange={set('education_level')}
+                  placeholder="VD: 12/12, Đại học..." style={inputStyle} />
+              </Row>
+              <Row label="Trình độ chuyên môn">
+                <input value={form.professional_level} onChange={set('professional_level')}
+                  placeholder="VD: Kỹ sư xây dựng, Cử nhân kế toán..." style={inputStyle} />
+              </Row>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Row label="Trường đào tạo">
+                  <input value={form.training_school} onChange={set('training_school')}
+                    placeholder="Tên trường đại học / cao đẳng / THPT..." style={inputStyle} />
+                </Row>
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Row label="Quá trình học tập và công tác">
+                  <textarea value={form.work_history} onChange={set('work_history')}
+                    rows={4} placeholder="Mô tả quá trình học tập, công tác qua các đơn vị..."
+                    style={{ ...inputStyle, resize: 'vertical' }} />
+                </Row>
+              </div>
+
+              <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #f1f5f9', paddingTop: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 12 }}>
+                  Bảo hiểm & Thuế
+                </div>
+              </div>
+              <Row label="MST cá nhân">
+                <input value={form.tax_code} onChange={set('tax_code')}
+                  placeholder="Mã số thuế cá nhân" style={inputStyle} />
+              </Row>
+              <Row label="Số sổ BHXH">
+                <input value={form.social_insurance_number} onChange={set('social_insurance_number')}
+                  placeholder="Số sổ bảo hiểm xã hội" style={inputStyle} />
+              </Row>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Row label="Số hợp đồng lao động">
+                  <input value={form.labor_contract_number} onChange={set('labor_contract_number')}
+                    placeholder="Số HĐLĐ hiện hành" style={inputStyle} />
+                </Row>
+              </div>
+
+              <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #f1f5f9', paddingTop: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 12 }}>
+                  Liên hệ khẩn cấp
+                </div>
+              </div>
+              <Row label="SĐT người thân (1)">
+                <input value={form.emergency_phone_1} onChange={set('emergency_phone_1')}
+                  placeholder="09x..." style={inputStyle} />
+              </Row>
+              <Row label="SĐT người thân (2)">
+                <input value={form.emergency_phone_2} onChange={set('emergency_phone_2')}
+                  placeholder="09x..." style={inputStyle} />
+              </Row>
             </div>
           )}
 
