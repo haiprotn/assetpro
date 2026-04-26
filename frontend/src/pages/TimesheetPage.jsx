@@ -391,7 +391,7 @@ export default function TimesheetPage() {
             <ReportTab
               rows={rows}
               personnel={filteredP}
-              allPersonnel={filteredP}
+              depts={depts}
               days={days}
               numDays={numDays}
               year={year}
@@ -802,9 +802,26 @@ function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchR
 
 // ─── ReportTab ────────────────────────────────────────────────────────────────
 
-function ReportTab({ rows, personnel, days, numDays, year, month, isLoading }) {
+function ReportTab({ rows, personnel, depts, days, numDays, year, month, isLoading }) {
   if (isLoading) return <Empty text="Đang tải..." />
   if (!rows.length && !personnel.length) return <Empty text="Không có dữ liệu" />
+
+  // Dept lookup map: id → name
+  const deptMap = Object.fromEntries((depts || []).map(d => [String(d.id), d.name]))
+
+  // Dept from rows (join gives department_name)
+  const pidDeptFromRows = {}
+  for (const r of rows) {
+    if (r.department_name) pidDeptFromRows[String(r.personnel_id)] = r.department_name
+  }
+
+  function getDeptName(p) {
+    const pid = String(p.id)
+    return pidDeptFromRows[pid]
+        || deptMap[String(p.department_id)]
+        || p.department_name
+        || ''
+  }
 
   // Build map: pid → { day → totalHours (summed across all rows) }
   const pidDayMap = {}
@@ -880,7 +897,7 @@ function ReportTab({ rows, personnel, days, numDays, year, month, isLoading }) {
                   <td style={{ ...TD, position:'sticky', left:182, background:bg,
                                 fontSize:10, color:'#64748b', maxWidth:90, overflow:'hidden',
                                 textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                    {p.department_name || ''}
+                    {getDeptName(p)}
                   </td>
                   {days.map(d => {
                     const h   = dmap[d]
