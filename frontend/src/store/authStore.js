@@ -3,11 +3,11 @@ import { authApi } from '../services/api'
 
 // Quyền mặc định theo vai trò (phải khớp với ConfigPage.jsx)
 const ROLE_DEFAULTS = {
-  SUPER_ADMIN: { 'Tổng quan': ['xem'], 'Tài sản': ['xem','tạo','sửa','xóa'], 'Điều chuyển': ['xem','tạo','duyệt','từ chối','hủy'], 'Bảo trì': ['xem','tạo','hoàn tất','hủy'], 'Lịch sử': ['xem'], 'Báo cáo': ['xem','xuất file'], 'Cấu hình': ['toàn quyền'], 'Tài khoản': ['toàn quyền'] },
-  ADMIN:       { 'Tổng quan': ['xem'], 'Tài sản': ['xem','tạo','sửa','xóa'], 'Điều chuyển': ['xem','tạo','duyệt','từ chối','hủy'], 'Bảo trì': ['xem','tạo','hoàn tất','hủy'], 'Lịch sử': ['xem'], 'Báo cáo': ['xem','xuất file'], 'Cấu hình': ['toàn quyền'], 'Tài khoản': ['toàn quyền'] },
-  MANAGER:     { 'Tổng quan': ['xem'], 'Tài sản': ['xem','tạo','sửa'], 'Điều chuyển': ['xem','tạo','duyệt','từ chối'], 'Bảo trì': ['xem','tạo','hoàn tất'], 'Lịch sử': ['xem'], 'Báo cáo': ['xem','xuất file'], 'Cấu hình': [], 'Tài khoản': [] },
-  OPERATOR:    { 'Tổng quan': ['xem'], 'Tài sản': ['xem','sửa'], 'Điều chuyển': ['xem','tạo'], 'Bảo trì': ['xem','tạo','hoàn tất'], 'Lịch sử': ['xem'], 'Báo cáo': [], 'Cấu hình': [], 'Tài khoản': [] },
-  VIEWER:      { 'Tổng quan': ['xem'], 'Tài sản': ['xem'], 'Điều chuyển': ['xem'], 'Bảo trì': ['xem'], 'Lịch sử': [], 'Báo cáo': [], 'Cấu hình': [], 'Tài khoản': [] },
+  SUPER_ADMIN: { 'Tổng quan': ['xem'], 'Tài sản': ['xem','tạo','sửa','xóa'], 'Điều chuyển': ['xem','tạo','duyệt','từ chối','hủy'], 'Bảo trì': ['xem','tạo','hoàn tất','hủy'], 'Lịch sử': ['xem'], 'Báo cáo': ['xem','xuất file'], 'Chấm công': ['xem','nhập liệu','xuất file'], 'Cấu hình': ['toàn quyền'], 'Tài khoản': ['toàn quyền'] },
+  ADMIN:       { 'Tổng quan': ['xem'], 'Tài sản': ['xem','tạo','sửa','xóa'], 'Điều chuyển': ['xem','tạo','duyệt','từ chối','hủy'], 'Bảo trì': ['xem','tạo','hoàn tất','hủy'], 'Lịch sử': ['xem'], 'Báo cáo': ['xem','xuất file'], 'Chấm công': ['xem','nhập liệu','xuất file'], 'Cấu hình': ['toàn quyền'], 'Tài khoản': ['toàn quyền'] },
+  MANAGER:     { 'Tổng quan': ['xem'], 'Tài sản': ['xem','tạo','sửa'], 'Điều chuyển': ['xem','tạo','duyệt','từ chối'], 'Bảo trì': ['xem','tạo','hoàn tất'], 'Lịch sử': ['xem'], 'Báo cáo': ['xem','xuất file'], 'Chấm công': ['xem','nhập liệu','xuất file'], 'Cấu hình': [], 'Tài khoản': [] },
+  OPERATOR:    { 'Tổng quan': ['xem'], 'Tài sản': ['xem','sửa'], 'Điều chuyển': ['xem','tạo'], 'Bảo trì': ['xem','tạo','hoàn tất'], 'Lịch sử': ['xem'], 'Báo cáo': [], 'Chấm công': ['xem','nhập liệu'], 'Cấu hình': [], 'Tài khoản': [] },
+  VIEWER:      { 'Tổng quan': ['xem'], 'Tài sản': ['xem'], 'Điều chuyển': ['xem'], 'Bảo trì': ['xem'], 'Lịch sử': [], 'Báo cáo': [], 'Chấm công': ['xem'], 'Cấu hình': [], 'Tài khoản': [] },
 }
 
 // Tính quyền hiệu lực = quyền mặc định của role + override tùy chỉnh
@@ -60,5 +60,16 @@ export const useAuthStore = create((set, get) => ({
     const { user } = get()
     if (!user) return {}
     return effectivePermissions(user.role, user.permissions)
+  },
+
+  // Trả về danh sách phòng ban được phép chấm công
+  // null = tất cả, [] = không có quyền, [id,...] = danh sách cụ thể
+  getAttendanceDepts: () => {
+    const { user } = get()
+    if (!user) return []
+    if (['SUPER_ADMIN', 'ADMIN'].includes(user.role)) return null // tất cả
+    const perms = effectivePermissions(user.role, user.permissions)
+    const depts = perms['Chấm công_phòng_ban']
+    return Array.isArray(depts) && depts.length ? depts : null
   },
 }))

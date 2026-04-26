@@ -9,6 +9,7 @@ const NAV_PERMS = {
   '/transfers':   { module: 'Điều chuyển', action: 'xem' },
   '/maintenance': { module: 'Bảo trì',     action: 'xem' },
   '/lifecycle':   { module: 'Lịch sử',     action: 'xem' },
+  '/timesheet':   { module: 'Chấm công',   action: 'xem' },
   '/config':      { module: 'Cấu hình',    action: 'toàn quyền' },
 }
 

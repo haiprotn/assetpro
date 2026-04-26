@@ -6,6 +6,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { timesheetApi, personnelApi, deptApi } from '../services/api'
+import { useAuthStore } from '../store/authStore'
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
@@ -33,10 +34,19 @@ function calcRow(hours = {}, numDays) {
 
 export default function TimesheetPage() {
   const qc = useQueryClient()
+  const { hasPermission, getAttendanceDepts } = useAuthStore()
+
+  const canWrite  = hasPermission('Chấm công', 'nhập liệu')
+  const canExport = hasPermission('Chấm công', 'xuất file')
+
+  // Phòng ban được phép: null = tất cả, [...ids] = giới hạn
+  const allowedDepts = getAttendanceDepts()
+  const deptLocked   = allowedDepts !== null && allowedDepts.length === 1
 
   const [year,   setYear]   = useState(today.getFullYear())
   const [month,  setMonth]  = useState(today.getMonth() + 1)
-  const [deptId, setDeptId] = useState('')
+  // Nếu user bị giới hạn 1 phòng ban → tự động filter
+  const [deptId, setDeptId] = useState(deptLocked ? allowedDepts[0] : '')
   const [search, setSearch] = useState('')
   const [selPid, setSelPid] = useState(null)
   const [tab,    setTab]    = useState('input')   // input | report
@@ -289,9 +299,18 @@ export default function TimesheetPage() {
         <select style={SEL} value={year} onChange={e => setYear(+e.target.value)}>
           {[year-1,year,year+1].map(y => <option key={y} value={y}>{y}</option>)}
         </select>
-        <select style={SEL} value={deptId} onChange={e => setDeptId(e.target.value)}>
-          <option value="">Tất cả phòng ban</option>
-          {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+        <select
+          style={{ ...SEL, background: deptLocked ? '#f8fafc' : 'white' }}
+          value={deptId}
+          onChange={e => !deptLocked && setDeptId(e.target.value)}
+          disabled={deptLocked}
+          title={deptLocked ? 'Tài khoản của bạn chỉ xem phòng ban được phân công' : ''}
+        >
+          {!deptLocked && <option value="">Tất cả phòng ban</option>}
+          {depts
+            .filter(d => !allowedDepts || allowedDepts.includes(String(d.id)))
+            .map(d => <option key={d.id} value={d.id}>{d.name}</option>)
+          }
         </select>
 
         {/* Tabs */}
@@ -308,9 +327,11 @@ export default function TimesheetPage() {
 
         {saving && <span style={{ fontSize:11, color:'#64748b' }}>Đang lưu...</span>}
         <div style={{ flex:1 }} />
-        <button onClick={handleExport} style={{ ...BTN, background:'#1a2744', color:'white' }}>
-          ⬇ Xuất Excel
-        </button>
+        {canExport && (
+          <button onClick={handleExport} style={{ ...BTN, background:'#1a2744', color:'white' }}>
+            ⬇ Xuất Excel
+          </button>
+        )}
       </div>
 
       {/* Body */}
@@ -384,6 +405,7 @@ export default function TimesheetPage() {
                   saveStatus={saveStatus}
                   dirty={dirty}
                   flushSave={flushSave}
+                  readOnly={!canWrite}
                 />
               : <Empty text="Chọn nhân viên để nhập chấm công" />
           )}
@@ -418,7 +440,7 @@ export default function TimesheetPage() {
 
 // ─── InputGrid (vertical: rows=days, cols=work-types) ────────────────────────
 
-function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchRow, addRow, delMut, setDrafts, saving, saveStatus, dirty, flushSave }) {
+function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchRow, addRow, delMut, setDrafts, saving, saveStatus, dirty, flushSave, readOnly }) {
   const pid = String(person.id)
   const [editCol, setEditCol] = useState(null)
 
@@ -534,27 +556,36 @@ function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchR
           background:'rgba(251,191,36,.2)', color:'#fbbf24', fontSize:12, fontWeight:700,
         }}>⚡ Check đủ ngày thường</button>
 
-        {/* Save button */}
-        <button
-          onClick={flushSave}
-          disabled={saving}
-          style={{
-            padding:'7px 18px', borderRadius:9, border:'none',
-            cursor: saving ? 'wait' : 'pointer', fontWeight:700, fontSize:13,
-            display:'flex', alignItems:'center', gap:6, transition:'all .2s',
-            background: saving        ? 'rgba(255,255,255,.1)'
-                       : saveStatus==='saved' ? '#16a34a'
-                       : dirty              ? '#f59e0b'
-                       : 'rgba(255,255,255,.15)',
-            color: 'white',
-            boxShadow: dirty && !saving ? '0 0 0 2px #fbbf24' : 'none',
-          }}
-        >
-          <span style={{ fontSize:15 }}>
-            {saving ? '⏳' : saveStatus==='saved' ? '✓' : dirty ? '●' : '💾'}
+        {readOnly && (
+          <span style={{ fontSize:11, color:'#f59e0b', fontWeight:600, padding:'4px 10px',
+                         borderRadius:7, background:'rgba(245,158,11,.15)' }}>
+            👁 Chỉ xem
           </span>
-          {saving ? 'Đang lưu...' : saveStatus==='saved' ? 'Đã lưu' : dirty ? 'Lưu (có thay đổi)' : 'Lưu'}
-        </button>
+        )}
+
+        {/* Save button */}
+        {!readOnly && (
+          <button
+            onClick={flushSave}
+            disabled={saving}
+            style={{
+              padding:'7px 18px', borderRadius:9, border:'none',
+              cursor: saving ? 'wait' : 'pointer', fontWeight:700, fontSize:13,
+              display:'flex', alignItems:'center', gap:6, transition:'all .2s',
+              background: saving              ? 'rgba(255,255,255,.1)'
+                         : saveStatus==='saved' ? '#16a34a'
+                         : dirty               ? '#f59e0b'
+                         : 'rgba(255,255,255,.15)',
+              color: 'white',
+              boxShadow: dirty && !saving ? '0 0 0 2px #fbbf24' : 'none',
+            }}
+          >
+            <span style={{ fontSize:15 }}>
+              {saving ? '⏳' : saveStatus==='saved' ? '✓' : dirty ? '●' : '💾'}
+            </span>
+            {saving ? 'Đang lưu...' : saveStatus==='saved' ? 'Đã lưu' : dirty ? 'Lưu (có thay đổi)' : 'Lưu'}
+          </button>
+        )}
 
         <SChip label="Ngày công" val={workDays} unit="ngày" c="#60a5fa" />
         <SChip label="Tổng giờ"  val={totalH}   unit="giờ"  c="#34d399" />
@@ -672,8 +703,8 @@ function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchR
                   </td>
                   {/* S button */}
                   <td style={{...VTD,textAlign:'center',padding:'3px 3px'}}>
-                    <button onClick={()=>toggleSession(d,'s')} title="Sáng (4h)"
-                      style={{width:28,height:28,borderRadius:7,border:'none', cursor:'pointer',
+                    <button onClick={()=>!readOnly&&toggleSession(d,'s')} title={readOnly?'Chỉ xem':'Sáng (4h)'}
+                      style={{width:28,height:28,borderRadius:7,border:'none', cursor:readOnly?'default':'pointer', opacity:readOnly?.6:1,
                         background: sess.s ? (isWknd?'#d97706':'#2563eb') : '#f1f5f9',
                         color: sess.s?'white':'#94a3b8',
                         fontSize:11,fontWeight:700,transition:'all .12s',
@@ -682,8 +713,8 @@ function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchR
                   </td>
                   {/* C button */}
                   <td style={{...VTD,textAlign:'center',padding:'3px 3px',borderRight:'2px solid #e2e8f0'}}>
-                    <button onClick={()=>toggleSession(d,'c')} title="Chiều (4h)"
-                      style={{width:28,height:28,borderRadius:7,border:'none', cursor:'pointer',
+                    <button onClick={()=>!readOnly&&toggleSession(d,'c')} title={readOnly?'Chỉ xem':'Chiều (4h)'}
+                      style={{width:28,height:28,borderRadius:7,border:'none', cursor:readOnly?'default':'pointer', opacity:readOnly?.6:1,
                         background: sess.c ? (isWknd?'#d97706':'#2563eb') : '#f1f5f9',
                         color: sess.c?'white':'#94a3b8',
                         fontSize:11,fontWeight:700,transition:'all .12s',
@@ -711,9 +742,9 @@ function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchR
                       <td key={row.row_index} style={{...VTD,padding:'3px 5px',textAlign:'center',background:rowBg}}>
                         <input type="number" min={0} max={24} step={0.5}
                           value={h>0?h:''}
-                          onChange={e=>handleSubChange(row.row_index,d,e.target.value)}
-                          disabled={!active}
-                          placeholder={active?'–':''}
+                          onChange={e=>!readOnly&&handleSubChange(row.row_index,d,e.target.value)}
+                          disabled={!active||readOnly}
+                          placeholder={active&&!readOnly?'–':''}
                           style={{width:'100%',border:'1px solid transparent',background:'transparent',
                             textAlign:'center',fontSize:15,outline:'none',borderRadius:6,
                             color:h>0?'#7c3aed':'#d1d5db',fontWeight:h>0?600:400,padding:'3px 0',

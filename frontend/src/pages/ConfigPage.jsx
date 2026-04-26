@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { userApi, assetTypeGroupApi } from '../services/api'
+import { userApi, assetTypeGroupApi, deptApi } from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import { Card, PageHeader, Btn, Spinner } from '../components/ui'
 import toast from 'react-hot-toast'
@@ -16,14 +16,14 @@ const ROLE_INFO = {
 
 // Default permissions per role per module
 const ROLE_DEFAULTS = {
-  SUPER_ADMIN: { 'Tổng quan': ['xem'], 'Tài sản': ['xem','tạo','sửa','xóa'], 'Điều chuyển': ['xem','tạo','duyệt','từ chối','hủy'], 'Bảo trì': ['xem','tạo','hoàn tất','hủy'], 'Lịch sử': ['xem'], 'Báo cáo': ['xem','xuất file'], 'Cấu hình': ['toàn quyền'], 'Tài khoản': ['toàn quyền'] },
-  ADMIN:       { 'Tổng quan': ['xem'], 'Tài sản': ['xem','tạo','sửa','xóa'], 'Điều chuyển': ['xem','tạo','duyệt','từ chối','hủy'], 'Bảo trì': ['xem','tạo','hoàn tất','hủy'], 'Lịch sử': ['xem'], 'Báo cáo': ['xem','xuất file'], 'Cấu hình': ['toàn quyền'], 'Tài khoản': ['toàn quyền'] },
-  MANAGER:     { 'Tổng quan': ['xem'], 'Tài sản': ['xem','tạo','sửa'], 'Điều chuyển': ['xem','tạo','duyệt','từ chối'], 'Bảo trì': ['xem','tạo','hoàn tất'], 'Lịch sử': ['xem'], 'Báo cáo': ['xem','xuất file'], 'Cấu hình': [], 'Tài khoản': [] },
-  OPERATOR:    { 'Tổng quan': ['xem'], 'Tài sản': ['xem','sửa'], 'Điều chuyển': ['xem','tạo'], 'Bảo trì': ['xem','tạo','hoàn tất'], 'Lịch sử': ['xem'], 'Báo cáo': [], 'Cấu hình': [], 'Tài khoản': [] },
-  VIEWER:      { 'Tổng quan': ['xem'], 'Tài sản': ['xem'], 'Điều chuyển': ['xem'], 'Bảo trì': ['xem'], 'Lịch sử': [], 'Báo cáo': [], 'Cấu hình': [], 'Tài khoản': [] },
+  SUPER_ADMIN: { 'Tổng quan': ['xem'], 'Tài sản': ['xem','tạo','sửa','xóa'], 'Điều chuyển': ['xem','tạo','duyệt','từ chối','hủy'], 'Bảo trì': ['xem','tạo','hoàn tất','hủy'], 'Lịch sử': ['xem'], 'Báo cáo': ['xem','xuất file'], 'Chấm công': ['xem','nhập liệu','xuất file'], 'Cấu hình': ['toàn quyền'], 'Tài khoản': ['toàn quyền'] },
+  ADMIN:       { 'Tổng quan': ['xem'], 'Tài sản': ['xem','tạo','sửa','xóa'], 'Điều chuyển': ['xem','tạo','duyệt','từ chối','hủy'], 'Bảo trì': ['xem','tạo','hoàn tất','hủy'], 'Lịch sử': ['xem'], 'Báo cáo': ['xem','xuất file'], 'Chấm công': ['xem','nhập liệu','xuất file'], 'Cấu hình': ['toàn quyền'], 'Tài khoản': ['toàn quyền'] },
+  MANAGER:     { 'Tổng quan': ['xem'], 'Tài sản': ['xem','tạo','sửa'], 'Điều chuyển': ['xem','tạo','duyệt','từ chối'], 'Bảo trì': ['xem','tạo','hoàn tất'], 'Lịch sử': ['xem'], 'Báo cáo': ['xem','xuất file'], 'Chấm công': ['xem','nhập liệu','xuất file'], 'Cấu hình': [], 'Tài khoản': [] },
+  OPERATOR:    { 'Tổng quan': ['xem'], 'Tài sản': ['xem','sửa'], 'Điều chuyển': ['xem','tạo'], 'Bảo trì': ['xem','tạo','hoàn tất'], 'Lịch sử': ['xem'], 'Báo cáo': [], 'Chấm công': ['xem','nhập liệu'], 'Cấu hình': [], 'Tài khoản': [] },
+  VIEWER:      { 'Tổng quan': ['xem'], 'Tài sản': ['xem'], 'Điều chuyển': ['xem'], 'Bảo trì': ['xem'], 'Lịch sử': [], 'Báo cáo': [], 'Chấm công': ['xem'], 'Cấu hình': [], 'Tài khoản': [] },
 }
 
-const ALL_MODULES = ['Tổng quan', 'Tài sản', 'Điều chuyển', 'Bảo trì', 'Lịch sử', 'Báo cáo', 'Cấu hình', 'Tài khoản']
+const ALL_MODULES = ['Tổng quan', 'Tài sản', 'Điều chuyển', 'Bảo trì', 'Lịch sử', 'Báo cáo', 'Chấm công', 'Cấu hình', 'Tài khoản']
 
 const MODULE_ACTIONS = {
   'Tổng quan':   ['xem'],
@@ -32,9 +32,13 @@ const MODULE_ACTIONS = {
   'Bảo trì':     ['xem', 'tạo', 'hoàn tất', 'hủy'],
   'Lịch sử':     ['xem'],
   'Báo cáo':     ['xem', 'xuất file'],
+  'Chấm công':   ['xem', 'nhập liệu', 'xuất file'],
   'Cấu hình':    ['toàn quyền'],
   'Tài khoản':   ['toàn quyền'],
 }
+
+// Key lưu phòng ban được phép chấm công trong user.permissions
+const CC_DEPT_KEY = 'Chấm công_phòng_ban'
 
 // Merge role defaults with user-level overrides
 function effectivePermissions(role, customPerms) {
@@ -174,14 +178,18 @@ function UserModal({ user, onClose, onSaved }) {
 function PermissionModal({ user, onClose, onSaved }) {
   const role = user.role
   const roleDefaults = ROLE_DEFAULTS[role] || {}
-  // Start from user's existing custom perms or empty
   const [custom, setCustom] = useState(
     user.permissions && Object.keys(user.permissions).length > 0 ? { ...user.permissions } : {}
   )
-  const [saving, setSaving] = useState(false)
+  const [saving,    setSaving]    = useState(false)
   const [useCustom, setUseCustom] = useState(
     user.permissions && Object.keys(user.permissions).length > 0
   )
+
+  const { data: depts = [] } = useQuery({
+    queryKey: ['departments'],
+    queryFn: () => deptApi.list().then(r => r.data),
+  })
 
   const toggle = (mod, action) => {
     setCustom(prev => {
@@ -193,10 +201,22 @@ function PermissionModal({ user, onClose, onSaved }) {
     })
   }
 
+  const toggleDept = (deptId) => {
+    setCustom(prev => {
+      const cur = [...(prev[CC_DEPT_KEY] || [])]
+      const idx = cur.indexOf(String(deptId))
+      if (idx >= 0) cur.splice(idx, 1)
+      else cur.push(String(deptId))
+      return { ...prev, [CC_DEPT_KEY]: cur }
+    })
+  }
+
   const resetModule = (mod) => {
     setCustom(prev => {
       const next = { ...prev }
       delete next[mod]
+      // Xóa luôn dept restriction khi reset Chấm công
+      if (mod === 'Chấm công') delete next[CC_DEPT_KEY]
       return next
     })
   }
@@ -292,6 +312,46 @@ function PermissionModal({ user, onClose, onSaved }) {
                   )
                 })}
               </div>
+
+              {/* Chấm công: chọn phòng ban được phép */}
+              {mod === 'Chấm công' && hasAction(mod, 'xem') && depts.length > 0 && (
+                <div style={{ marginTop:10, paddingTop:10, borderTop:'1px dashed #e2e8f0' }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:'#475569', marginBottom:6 }}>
+                    🏢 Phòng ban được phép chấm công
+                    <span style={{ fontWeight:400, color:'#94a3b8', marginLeft:6 }}>
+                      (để trống = tất cả phòng ban)
+                    </span>
+                  </div>
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:5 }}>
+                    {depts.map(dept => {
+                      const sel = (custom[CC_DEPT_KEY] || []).includes(String(dept.id))
+                      return (
+                        <label key={dept.id} style={{
+                          display:'flex', alignItems:'center', gap:4, cursor:'pointer',
+                          padding:'4px 10px', borderRadius:20, fontSize:11, fontWeight:600,
+                          background: sel ? '#dbeafe' : '#f8fafc',
+                          color:      sel ? '#1d4ed8' : '#94a3b8',
+                          border:`1.5px solid ${sel ? '#93c5fd' : '#e2e8f0'}`,
+                          transition:'all 0.15s',
+                        }}>
+                          <input type="checkbox" checked={sel} style={{ display:'none' }}
+                            onChange={() => {
+                              if (!overridden) setCustom(p => ({...p, [mod]: [...(roleDefaults[mod]||[])]}))
+                              toggleDept(dept.id)
+                            }}
+                          />
+                          {sel ? '✓' : '○'} {dept.name}
+                        </label>
+                      )
+                    })}
+                  </div>
+                  {(custom[CC_DEPT_KEY]||[]).length > 0 && (
+                    <div style={{ fontSize:10, color:'#d97706', marginTop:4 }}>
+                      ⚠ Tài khoản này chỉ xem/nhập chấm công cho {(custom[CC_DEPT_KEY]||[]).length} phòng ban đã chọn
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )
         })}
