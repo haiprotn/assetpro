@@ -184,12 +184,32 @@ export const userApi = {
 }
 
 
-// ── Timesheet (Chấm công) ────────────────────────────────────
+// ── Timesheet legacy (kept for backward compat) ──────────────
 export const timesheetApi = {
   list:      (params) => api.get('/timesheet', { params }),
   bulkSave:  (rows)   => api.post('/timesheet/rows/bulk', rows),
   deleteRow: (id)     => api.delete(`/timesheet/rows/${id}`),
   export:    (params) => api.get('/timesheet/export', { params, responseType: 'blob' }),
+}
+
+// ── Attendance v2 ────────────────────────────────────────────
+export const attendanceApi = {
+  // Attendance records
+  list:   (params)              => api.get('/attendance', { params }),
+  upsert: (pid, date, data)     => api.put(`/attendance/${pid}/${date}`, data),
+  // Work logs
+  listWorkLogs:   (params)      => api.get('/attendance/work-logs', { params }),
+  createWorkLog:  (data)        => api.post('/attendance/work-logs', data),
+  updateWorkLog:  (id, data)    => api.put(`/attendance/work-logs/${id}`, data),
+  deleteWorkLog:  (id)          => api.delete(`/attendance/work-logs/${id}`),
+  // Projects
+  listProjects:   ()            => api.get('/attendance/projects'),
+  createProject:  (data)        => api.post('/attendance/projects', data),
+  updateProject:  (id, data)    => api.put(`/attendance/projects/${id}`, data),
+  deleteProject:  (id)          => api.delete(`/attendance/projects/${id}`),
+  // Report & export
+  report: (params)              => api.get('/attendance/report', { params }),
+  export: (params)              => api.get('/attendance/export', { params, responseType: 'blob' }),
 }
 
 export default api
