@@ -42,6 +42,8 @@ export default function TimesheetPage() {
   const [tab,    setTab]    = useState('input')   // input | report
   const [saving,     setSaving]     = useState(false)
   const [saveStatus, setSaveStatus] = useState('idle') // idle | saving | saved
+  const [dirty,      setDirty]      = useState(false)  // có thay đổi chưa lưu
+  const [toast,      setToast]      = useState(null)   // thông báo nổi
 
   const numDays = daysInMonth(year, month)
   const days    = Array.from({ length: numDays }, (_, i) => i + 1)
@@ -100,10 +102,15 @@ export default function TimesheetPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['timesheet', year, month, deptId] })
       setNewRows({})
+      setDirty(false)
       setSaveStatus('saved')
+      showToast('✓ Đã lưu thành công!')
       setTimeout(() => setSaveStatus('idle'), 2500)
     },
-    onError: () => setSaveStatus('idle'),
+    onError: (err) => {
+      setSaveStatus('idle')
+      showToast('❌ Lỗi lưu: ' + (err?.response?.data?.detail || err?.message || 'Lỗi không xác định'))
+    },
   })
 
   const delMut = useMutation({
@@ -113,15 +120,22 @@ export default function TimesheetPage() {
 
   // ── Auto-save ──────────────────────────────────────────────────────────────
 
+  function showToast(msg) {
+    setToast(msg)
+    setTimeout(() => setToast(null), 3000)
+  }
+
+  // Không auto-save — chỉ đánh dấu dirty, chờ user bấm Lưu
   const triggerSave = useCallback(() => {
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(async () => flushSave(), 800)
-  }, [saveMut])
+    setDirty(true)
+  }, [])
 
   async function flushSave() {
-    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null }
     const batch = pendingRef.current
-    if (!Object.keys(batch).length) return
+    if (!Object.keys(batch).length) {
+      showToast('Không có thay đổi mới để lưu')
+      return
+    }
     pendingRef.current = {}
     const payload = Object.values(batch)
     setSaving(true); setSaveStatus('saving')
@@ -340,6 +354,7 @@ export default function TimesheetPage() {
                   setDrafts={setDrafts}
                   saving={saving}
                   saveStatus={saveStatus}
+                  dirty={dirty}
                   flushSave={flushSave}
                 />
               : <Empty text="Chọn nhân viên để nhập chấm công" />
@@ -358,13 +373,24 @@ export default function TimesheetPage() {
           )}
         </div>
       </div>
+
+      {/* Toast notification */}
+      {toast && (
+        <div style={{
+          position:'fixed', bottom:28, left:'50%', transform:'translateX(-50%)',
+          background: toast.startsWith('✓') ? '#16a34a' : toast.startsWith('❌') ? '#dc2626' : '#1a2744',
+          color:'white', padding:'11px 28px', borderRadius:12, zIndex:9999,
+          fontSize:14, fontWeight:700, boxShadow:'0 6px 24px rgba(0,0,0,.3)',
+          pointerEvents:'none', whiteSpace:'nowrap',
+        }}>{toast}</div>
+      )}
     </div>
   )
 }
 
 // ─── InputGrid (vertical: rows=days, cols=work-types) ────────────────────────
 
-function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchRow, addRow, delMut, setDrafts, saving, saveStatus, flushSave }) {
+function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchRow, addRow, delMut, setDrafts, saving, saveStatus, dirty, flushSave }) {
   const pid = String(person.id)
   const [editCol, setEditCol] = useState(null)
 
@@ -399,6 +425,7 @@ function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchR
     const subTotal = rows.filter(r=>r.row_index>0).reduce((s,r)=>s+parseFloat((r.hours||{})[String(day)]||0),0)
     const main = Math.max(0, avail - subTotal)
     patchHour(pid, 0, day, main > 0 ? String(main) : '')
+    // dirty flag set by triggerSave inside patchHour
   }
 
   function handleSubChange(subIdx, day, value) {
@@ -479,15 +506,26 @@ function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchR
           background:'rgba(251,191,36,.2)', color:'#fbbf24', fontSize:12, fontWeight:700,
         }}>⚡ Check đủ ngày thường</button>
 
-        {/* Save button + status */}
-        <button onClick={flushSave} disabled={saving} style={{
-          padding:'5px 14px', borderRadius:8, border:'none', cursor: saving ? 'wait' : 'pointer',
-          background: saveStatus==='saved' ? '#16a34a' : 'rgba(255,255,255,.15)',
-          color: 'white', fontSize:12, fontWeight:700, transition:'background .3s',
-          display:'flex', alignItems:'center', gap:5,
-        }}>
-          {saving ? '⏳' : saveStatus==='saved' ? '✓' : '💾'}
-          {saving ? 'Đang lưu...' : saveStatus==='saved' ? 'Đã lưu' : 'Lưu'}
+        {/* Save button */}
+        <button
+          onClick={flushSave}
+          disabled={saving}
+          style={{
+            padding:'7px 18px', borderRadius:9, border:'none',
+            cursor: saving ? 'wait' : 'pointer', fontWeight:700, fontSize:13,
+            display:'flex', alignItems:'center', gap:6, transition:'all .2s',
+            background: saving        ? 'rgba(255,255,255,.1)'
+                       : saveStatus==='saved' ? '#16a34a'
+                       : dirty              ? '#f59e0b'
+                       : 'rgba(255,255,255,.15)',
+            color: 'white',
+            boxShadow: dirty && !saving ? '0 0 0 2px #fbbf24' : 'none',
+          }}
+        >
+          <span style={{ fontSize:15 }}>
+            {saving ? '⏳' : saveStatus==='saved' ? '✓' : dirty ? '●' : '💾'}
+          </span>
+          {saving ? 'Đang lưu...' : saveStatus==='saved' ? 'Đã lưu' : dirty ? 'Lưu (có thay đổi)' : 'Lưu'}
         </button>
 
         <SChip label="Ngày công" val={workDays} unit="ngày" c="#60a5fa" />
@@ -606,23 +644,23 @@ function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchR
                   </td>
                   {/* S button */}
                   <td style={{...VTD,textAlign:'center',padding:'3px 3px'}}>
-                    <button onClick={()=>!isWknd&&toggleSession(d,'s')} title={isWknd?'Cuối tuần':'Sáng 4h'}
-                      style={{width:28,height:28,borderRadius:7,border:'none',
-                        cursor:isWknd?'default':'pointer',
-                        background:sess.s?'#2563eb':'#f1f5f9',
-                        color:sess.s?'white':'#94a3b8',
+                    <button onClick={()=>toggleSession(d,'s')} title="Sáng (4h)"
+                      style={{width:28,height:28,borderRadius:7,border:'none', cursor:'pointer',
+                        background: sess.s ? (isWknd?'#d97706':'#2563eb') : '#f1f5f9',
+                        color: sess.s?'white':'#94a3b8',
                         fontSize:11,fontWeight:700,transition:'all .12s',
-                        opacity:isWknd?.3:1,boxShadow:sess.s?'0 2px 6px #2563eb55':'none'}}>S</button>
+                        boxShadow: sess.s ? (isWknd?'0 2px 6px #d9780655':'0 2px 6px #2563eb55') : 'none',
+                      }}>S</button>
                   </td>
                   {/* C button */}
                   <td style={{...VTD,textAlign:'center',padding:'3px 3px',borderRight:'2px solid #e2e8f0'}}>
-                    <button onClick={()=>!isWknd&&toggleSession(d,'c')} title={isWknd?'Cuối tuần':'Chiều 4h'}
-                      style={{width:28,height:28,borderRadius:7,border:'none',
-                        cursor:isWknd?'default':'pointer',
-                        background:sess.c?'#2563eb':'#f1f5f9',
-                        color:sess.c?'white':'#94a3b8',
+                    <button onClick={()=>toggleSession(d,'c')} title="Chiều (4h)"
+                      style={{width:28,height:28,borderRadius:7,border:'none', cursor:'pointer',
+                        background: sess.c ? (isWknd?'#d97706':'#2563eb') : '#f1f5f9',
+                        color: sess.c?'white':'#94a3b8',
                         fontSize:11,fontWeight:700,transition:'all .12s',
-                        opacity:isWknd?.3:1,boxShadow:sess.c?'0 2px 6px #2563eb55':'none'}}>C</button>
+                        boxShadow: sess.c ? (isWknd?'0 2px 6px #d9780655':'0 2px 6px #2563eb55') : 'none',
+                      }}>C</button>
                   </td>
 
                   {/* Việc Chính (computed, read-only) */}
