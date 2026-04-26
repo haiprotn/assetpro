@@ -88,7 +88,7 @@ async def bulk_save(
                 UPDATE timesheet_rows SET
                     row_label        = :row_label,
                     work_description = :work_description,
-                    hours            = :hours::jsonb,
+                    hours            = CAST(:hours AS JSONB),
                     leave_days       = :leave_days,
                     notes            = :notes,
                     updated_at       = NOW()
@@ -107,7 +107,7 @@ async def bulk_save(
                      row_label, work_description, hours, leave_days, notes)
                 VALUES
                     (gen_random_uuid(), :pid, :year, :month, :row_index,
-                     :row_label, :work_description, :hours::jsonb, :leave_days, :notes)
+                     :row_label, :work_description, CAST(:hours AS JSONB), :leave_days, :notes)
                 ON CONFLICT (personnel_id, year, month, row_index) DO UPDATE SET
                     row_label        = EXCLUDED.row_label,
                     work_description = EXCLUDED.work_description,
