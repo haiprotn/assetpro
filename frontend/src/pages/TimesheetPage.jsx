@@ -352,197 +352,295 @@ export default function TimesheetPage() {
   )
 }
 
-// ─── InputGrid ────────────────────────────────────────────────────────────────
+// ─── InputGrid (vertical: rows=days, cols=work-types) ────────────────────────
 
 function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchRow, addRow, delMut, setDrafts }) {
   const pid = String(person.id)
+  const [editCol, setEditCol] = useState(null) // "desc_N" | "lbl_N"
 
-  // person-level summary (combine all rows, per day max to avoid double-counting work days)
+  // day totals across all work-type columns
   const dayTotals = {}
   for (const row of rows)
     for (let d = 1; d <= numDays; d++) {
       const h = parseFloat((row.hours||{})[String(d)]||0)
       if (h > 0) dayTotals[d] = (dayTotals[d]||0) + h
     }
+
   const totalH   = +Object.values(dayTotals).reduce((s,h)=>s+h,0).toFixed(1)
-  const workDays = Object.keys(dayTotals).length
+  const workDays = Object.values(dayTotals).filter(h=>h>0).length
   const otH      = +Object.values(dayTotals).map(h=>Math.max(0,h-8)).reduce((s,h)=>s+h,0).toFixed(1)
+
+  // quick-fill weekdays with 8h for a column
+  function quickFill(rowIdx) {
+    const row = rows.find(r => r.row_index === rowIdx)
+    if (!row) return
+    const hrs = { ...(row.hours||{}) }
+    for (let d = 1; d <= numDays; d++) {
+      const dow = new Date(year, month-1, d).getDay()
+      if (dow !== 0 && dow !== 6) hrs[String(d)] = 8
+    }
+    patchRow(pid, rowIdx, { ...row, hours: hrs })
+  }
+
+  function clearCol(rowIdx) {
+    const row = rows.find(r => r.row_index === rowIdx)
+    if (row) patchRow(pid, rowIdx, { ...row, hours: {} })
+  }
+
+  const COL_W = 80 // px per work-type column
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
+
       {/* Person header */}
       <div style={{
-        padding:'9px 18px', background:'#1a2744', color:'white',
-        display:'flex', alignItems:'center', gap:16, flexShrink:0,
+        padding:'10px 18px', background:'#1a2744', color:'white',
+        display:'flex', alignItems:'center', gap:20, flexShrink:0,
       }}>
         <div>
           <div style={{ fontWeight:800, fontSize:15 }}>{person.full_name}</div>
-          <div style={{ fontSize:11, color:'#93c5fd', marginTop:1 }}>
+          <div style={{ fontSize:11, color:'#93c5fd', marginTop:2 }}>
             {[person.employee_code, person.position, person.department_name].filter(Boolean).join(' · ')}
           </div>
         </div>
         <div style={{ flex:1 }} />
-        <SChip label="Ngày công" val={workDays} unit="ngày" c="#60a5fa" />
-        <SChip label="Tổng giờ"  val={totalH}   unit="giờ"  c="#34d399" />
-        <SChip label="Tăng ca"   val={otH}      unit="giờ"  c="#fbbf24" />
+        <SChip label="Ngày công" val={workDays}        unit="ngày" c="#60a5fa" />
+        <SChip label="Tổng giờ"  val={totalH}          unit="giờ"  c="#34d399" />
+        <SChip label="Tăng ca"   val={otH}             unit="giờ"  c="#fbbf24" />
       </div>
 
-      {/* Table */}
-      <div style={{ flex:1, overflowX:'auto', overflowY:'auto' }}>
-        <table style={{ borderCollapse:'collapse', fontSize:12, minWidth:'100%' }}>
+      {/* Grid */}
+      <div style={{ flex:1, overflow:'auto' }}>
+        <table style={{ borderCollapse:'collapse', fontSize:13 }}>
           <colgroup>
-            <col style={{ width:150 }} />{/* Diễn giải */}
-            <col style={{ width:130 }} />{/* CV/BP tùy chọn */}
-            {days.map(d => <col key={d} style={{ width:30 }} />)}
-            <col style={{ width:58 }} />{/* NP */}
-            <col style={{ width:58 }} />{/* TC h */}
-            <col style={{ width:62 }} />{/* Tổng h */}
-            <col style={{ width:58 }} />{/* Ngày */}
-            <col style={{ width:52 }} />{/* >2h */}
-            <col style={{ width:120 }} />{/* Ghi chú */}
-            <col style={{ width:36 }} />{/* Actions */}
+            {/* sticky cols */}
+            <col style={{ width:44 }} />{/* Ngày */}
+            <col style={{ width:36 }} />{/* Thứ */}
+            {/* work-type cols */}
+            {rows.map(r => <col key={r.row_index} style={{ width:COL_W }} />)}
+            {/* add-col + total */}
+            <col style={{ width:32 }} />
+            <col style={{ width:64 }} />
           </colgroup>
+
           <thead>
             <tr>
-              <th style={TH}>Diễn giải CV</th>
-              <th style={TH}>CV / Bộ phận</th>
-              {days.map(d => {
-                const dow  = new Date(year,month-1,d).getDay()
-                const isWk = dow===0||dow===6
-                return (
-                  <th key={d} style={{
-                    ...TH, padding:'4px 1px',
-                    background: isWk ? '#2d4a8a' : '#1a2744',
-                  }}>
-                    <div style={{ fontSize:10 }}>{d}</div>
-                    <div style={{ fontSize:8, opacity:.7 }}>{DOW_SHORT[dow]}</div>
-                  </th>
-                )
-              })}
-              <th style={{ ...TH, background:'#2d3f6b' }}>NP</th>
-              <th style={{ ...TH, background:'#2d3f6b' }}>TC (h)</th>
-              <th style={{ ...TH, background:'#2d3f6b' }}>Tổng h</th>
-              <th style={{ ...TH, background:'#2d3f6b' }}>Ngày</th>
-              <th style={{ ...TH, background:'#2d3f6b' }}>TC&gt;2h</th>
-              <th style={{ ...TH, background:'#2d3f6b' }}>Ghi chú</th>
-              <th style={{ ...TH, background:'#374151' }}></th>
+              <th style={{ ...VTH, position:'sticky', left:0, zIndex:4 }}>Ngày</th>
+              <th style={{ ...VTH, position:'sticky', left:44, zIndex:4, borderRight:'2px solid rgba(255,255,255,.2)' }}>Thứ</th>
+
+              {rows.map((row, ci) => (
+                <th key={row.row_index} style={{ ...VTH, verticalAlign:'top', padding:'6px 8px' }}>
+                  {/* work_description — click to edit */}
+                  {editCol === `d${row.row_index}` ? (
+                    <input autoFocus
+                      list={`dg-${pid}-${row.row_index}`}
+                      value={row.work_description||''}
+                      onChange={e => patchRow(pid, row.row_index, {...row, work_description: e.target.value})}
+                      onBlur={() => setEditCol(null)}
+                      onKeyDown={e => e.key==='Enter' && setEditCol(null)}
+                      style={{ width:'100%', background:'rgba(255,255,255,.15)', border:'none',
+                               color:'white', textAlign:'center', fontSize:11, outline:'none',
+                               borderRadius:4, padding:'2px 4px', fontWeight:700 }}
+                    />
+                  ) : (
+                    <div onClick={() => setEditCol(`d${row.row_index}`)}
+                      title="Nhấn để đổi tên"
+                      style={{ fontWeight:700, fontSize:11, cursor:'pointer',
+                               borderBottom:'1px dashed rgba(255,255,255,.3)', paddingBottom:2 }}>
+                      {row.work_description || 'Loại việc'}
+                    </div>
+                  )}
+                  <datalist id={`dg-${pid}-${row.row_index}`}>
+                    {DIENGIAI.map(d => <option key={d} value={d} />)}
+                  </datalist>
+
+                  {/* row_label (machine/location) — click to edit */}
+                  {editCol === `l${row.row_index}` ? (
+                    <input autoFocus
+                      value={row.row_label||''}
+                      onChange={e => patchRow(pid, row.row_index, {...row, row_label: e.target.value||null})}
+                      onBlur={() => setEditCol(null)}
+                      onKeyDown={e => e.key==='Enter' && setEditCol(null)}
+                      placeholder="Máy / vị trí..."
+                      style={{ width:'100%', background:'rgba(255,255,255,.1)', border:'none',
+                               color:'#93c5fd', textAlign:'center', fontSize:9, outline:'none',
+                               borderRadius:4, padding:'1px 4px', marginTop:3 }}
+                    />
+                  ) : (
+                    <div onClick={() => setEditCol(`l${row.row_index}`)}
+                      title="Nhấn để nhập máy/vị trí"
+                      style={{ fontSize:9, color: row.row_label ? '#93c5fd' : 'rgba(255,255,255,.3)',
+                               cursor:'pointer', marginTop:3, minHeight:14 }}>
+                      {row.row_label || '+ máy/vị trí'}
+                    </div>
+                  )}
+
+                  {/* actions */}
+                  <div style={{ display:'flex', gap:3, justifyContent:'center', marginTop:5 }}>
+                    <button onClick={() => quickFill(row.row_index)} title="Điền 8h ngày thường"
+                      style={HBTN('#fbbf24','rgba(251,191,36,.15)')}>⚡8h</button>
+                    <button onClick={() => clearCol(row.row_index)} title="Xóa hết"
+                      style={HBTN('#94a3b8','rgba(255,255,255,.08)')}>✕</button>
+                    {row.id && row.row_index > 0 && (
+                      <button title="Xoá cột"
+                        onClick={() => {
+                          if (!window.confirm('Xoá loại công việc này?')) return
+                          delMut.mutate(row.id)
+                          setDrafts(p => { const n={...p}; delete n[`${pid}:${row.row_index}`]; return n })
+                        }}
+                        style={HBTN('#f87171','rgba(248,113,113,.15)')}>🗑</button>
+                    )}
+                  </div>
+                </th>
+              ))}
+
+              {/* + add col */}
+              <th style={{ ...VTH, background:'#374151', cursor:'pointer', fontSize:18, fontWeight:300 }}
+                  onClick={() => addRow(pid)} title="Thêm loại công việc">+</th>
+              {/* total col */}
+              <th style={{ ...VTH, background:'#2d3f6b', borderLeft:'2px solid rgba(255,255,255,.2)' }}>
+                Tổng<br/><span style={{ fontSize:9, opacity:.7 }}>giờ/ngày</span>
+              </th>
             </tr>
           </thead>
+
           <tbody>
-            {rows.map((row, ri) => {
-              const { total, workDays: wd, ot, otOver2 } = calcRow(row.hours, numDays)
-              const isEven = ri % 2 === 1
-              const bg     = isEven ? '#f8fafc' : 'white'
+            {days.map(d => {
+              const dow    = new Date(year, month-1, d).getDay()
+              const isWknd = dow===0 || dow===6
+              const total  = +(dayTotals[d]||0).toFixed(1)
+              const isOt   = total > 8
+              const rowBg  = isOt ? '#f0fdf4' : isWknd ? '#fffbeb' : 'white'
+
               return (
-                <tr key={row.row_index} style={{ background: bg }}>
-                  {/* Diễn giải (work_description) */}
-                  <td style={{ ...TD, background: bg }}>
-                    <input
-                      list={`dg-list-${pid}-${row.row_index}`}
-                      value={row.work_description || ''}
-                      onChange={e => patchRow(pid, row.row_index, { ...row, work_description: e.target.value })}
-                      placeholder="Diễn giải..."
-                      style={{ width:'100%', border:'none', background:'transparent', fontSize:12,
-                               outline:'none', padding:'2px 4px' }}
-                    />
-                    <datalist id={`dg-list-${pid}-${row.row_index}`}>
-                      {DIENGIAI.map(d => <option key={d} value={d} />)}
-                    </datalist>
-                  </td>
-                  {/* CV/BP (row_label) */}
-                  <td style={{ ...TD, background: bg }}>
-                    <input
-                      value={row.row_label || ''}
-                      onChange={e => patchRow(pid, row.row_index, { ...row, row_label: e.target.value || null })}
-                      placeholder={ri === 0
-                        ? [person.position, person.department_name].filter(Boolean).join(' / ') || 'Bộ phận...'
-                        : 'Máy / Vị trí...'}
-                      style={{ width:'100%', border:'none', background:'transparent', fontSize:11,
-                               outline:'none', padding:'2px 4px', color: row.row_label ? '#1e293b' : '#94a3b8' }}
-                    />
-                  </td>
-                  {/* Day cells */}
-                  {days.map(d => {
-                    const h   = parseFloat((row.hours||{})[String(d)]||0)
-                    const isOt = h > 8
-                    const dow  = new Date(year,month-1,d).getDay()
-                    const isWk = dow===0||dow===6
+                <tr key={d} style={{ background: rowBg }}>
+                  {/* Ngày */}
+                  <td style={{
+                    ...VTD, position:'sticky', left:0, background: rowBg, zIndex:1,
+                    textAlign:'center', fontWeight:700, fontSize:14,
+                    color: isWknd ? '#d97706' : '#1e293b',
+                  }}>{d}</td>
+                  {/* Thứ */}
+                  <td style={{
+                    ...VTD, position:'sticky', left:44, background: rowBg, zIndex:1,
+                    textAlign:'center', fontSize:11, color: isWknd ? '#d97706' : '#94a3b8',
+                    borderRight:'2px solid #e2e8f0',
+                  }}>{DOW_SHORT[dow]}</td>
+
+                  {/* Work-type cells */}
+                  {rows.map(row => {
+                    const h     = parseFloat((row.hours||{})[String(d)]||0)
+                    const isOtC = h > 8
                     return (
-                      <td key={d} style={{
-                        ...TD, padding:'1px', textAlign:'center',
-                        background: isOt ? '#dcfce7' : isWk ? '#fffbeb' : bg,
+                      <td key={row.row_index} style={{
+                        ...VTD, padding:'3px 6px', textAlign:'center',
+                        background: isOtC ? '#dcfce7' : rowBg,
                       }}>
                         <input
                           type="number" min={0} max={24} step={0.5}
                           value={h > 0 ? h : ''}
                           onChange={e => patchHour(pid, row.row_index, d, e.target.value)}
                           style={{
-                            width:28, border:'none', background:'transparent',
-                            textAlign:'center', fontSize:11, outline:'none', padding:0,
-                            color: isOt ? '#16a34a' : '#1e293b', fontWeight: isOt ? 700 : 400,
+                            width:'100%', border:'1px solid transparent', background:'transparent',
+                            textAlign:'center', fontSize:15, outline:'none', borderRadius:5,
+                            color: isOtC ? '#16a34a' : h > 0 ? '#1e293b' : '#d1d5db',
+                            fontWeight: h > 0 ? 600 : 400, padding:'3px 0',
                           }}
+                          onFocus={e => { e.target.style.borderColor='#93c5fd'; e.target.style.background='white' }}
+                          onBlur={e  => { e.target.style.borderColor='transparent'; e.target.style.background='transparent' }}
+                          placeholder="–"
                         />
                       </td>
                     )
                   })}
-                  {/* Summary */}
-                  <td style={SUM}>
-                    <input
-                      type="number" min={0} step={0.5}
-                      value={parseFloat(row.leave_days||0) > 0 ? row.leave_days : ''}
-                      onChange={e => patchRow(pid, row.row_index, { ...row, leave_days: parseFloat(e.target.value)||0 })}
-                      style={{ width:46, border:'none', background:'transparent', textAlign:'center',
-                               fontSize:11, outline:'none', fontWeight:700 }}
-                    />
-                  </td>
-                  <td style={SUM}>{ot > 0 ? ot : ''}</td>
-                  <td style={{ ...SUM, color: total > 0 ? '#16a34a' : '#94a3b8', fontWeight:700 }}>
-                    {total > 0 ? total : ''}
-                  </td>
-                  <td style={SUM}>{wd > 0 ? wd : ''}</td>
-                  <td style={SUM}>{otOver2 > 0 ? otOver2 : ''}</td>
-                  {/* Notes */}
-                  <td style={{ ...TD, background: bg }}>
-                    <input
-                      value={row.notes||''}
-                      onChange={e => patchRow(pid, row.row_index, { ...row, notes: e.target.value||null })}
-                      placeholder="Ghi chú..."
-                      style={{ width:'100%', border:'none', background:'transparent', fontSize:11,
-                               outline:'none', padding:'2px 4px' }}
-                    />
-                  </td>
-                  {/* Actions */}
-                  <td style={{ ...TD, textAlign:'center', background: bg }}>
-                    <div style={{ display:'flex', flexDirection:'column', gap:2, alignItems:'center' }}>
-                      {ri === rows.length - 1 && (
-                        <button onClick={() => addRow(pid)} title="Thêm dòng"
-                          style={ICOBTN('#94a3b8')}>+</button>
-                      )}
-                      {row.id && (
-                        <button
-                          onClick={() => {
-                            if (!window.confirm('Xoá dòng này?')) return
-                            delMut.mutate(row.id)
-                            setDrafts(prev => {
-                              const n = {...prev}
-                              delete n[`${pid}:${row.row_index}`]
-                              return n
-                            })
-                          }}
-                          title="Xoá" style={ICOBTN('#ef4444')}>×</button>
-                      )}
-                    </div>
+
+                  <td style={{ ...VTD, background: rowBg }} />
+
+                  {/* Row total */}
+                  <td style={{
+                    ...VTD, textAlign:'center', fontWeight: total>0 ? 700 : 400,
+                    fontSize:14, borderLeft:'2px solid #e2e8f0',
+                    background: isOt ? '#dcfce7' : '#f8fafc',
+                    color: isOt ? '#16a34a' : total>0 ? '#1e293b' : '#e2e8f0',
+                  }}>
+                    {total > 0 ? total : '–'}
                   </td>
                 </tr>
               )
             })}
           </tbody>
+
+          {/* ── Summary footer ── */}
+          <tfoot>
+            {/* Tổng tháng */}
+            <tr style={{ background:'#e8ecf4' }}>
+              <td colSpan={2} style={FTLBL}>Tổng tháng</td>
+              {rows.map(row => {
+                const {total} = calcRow(row.hours||{}, numDays)
+                return <td key={row.row_index} style={FTVAL('#16a34a')}>{total||'–'}</td>
+              })}
+              <td style={VTD}/>
+              <td style={{ ...FTVAL('#16a34a'), borderLeft:'2px solid #e2e8f0' }}>{totalH||'–'}</td>
+            </tr>
+            {/* Ngày công */}
+            <tr style={{ background:'#f1f5f9' }}>
+              <td colSpan={2} style={FTLBL}>Ngày công</td>
+              {rows.map(row => {
+                const {workDays: wd} = calcRow(row.hours||{}, numDays)
+                return <td key={row.row_index} style={FTVAL('#2563eb')}>{wd||'–'}</td>
+              })}
+              <td style={VTD}/>
+              <td style={{ ...FTVAL('#2563eb'), borderLeft:'2px solid #e2e8f0' }}>{workDays||'–'}</td>
+            </tr>
+            {/* Tăng ca */}
+            <tr style={{ background:'#f1f5f9' }}>
+              <td colSpan={2} style={FTLBL}>Tăng ca (h)</td>
+              {rows.map(row => {
+                const {ot} = calcRow(row.hours||{}, numDays)
+                return <td key={row.row_index} style={FTVAL(ot>0?'#d97706':'#94a3b8')}>{ot||'–'}</td>
+              })}
+              <td style={VTD}/>
+              <td style={{ ...FTVAL(otH>0?'#d97706':'#94a3b8'), borderLeft:'2px solid #e2e8f0' }}>{otH||'–'}</td>
+            </tr>
+            {/* Nghỉ phép */}
+            <tr style={{ background:'#fffbeb' }}>
+              <td colSpan={2} style={{ ...FTLBL, color:'#92400e' }}>Nghỉ phép</td>
+              {rows.map(row => (
+                <td key={row.row_index} style={{ ...VTD, padding:'3px 6px' }}>
+                  <input type="number" min={0} step={0.5}
+                    value={parseFloat(row.leave_days||0)>0 ? row.leave_days : ''}
+                    onChange={e => patchRow(pid, row.row_index, {...row, leave_days: parseFloat(e.target.value)||0})}
+                    placeholder="0"
+                    style={{ width:'100%', border:'1px solid #fde68a', background:'#fffbeb',
+                             textAlign:'center', fontSize:13, outline:'none', borderRadius:5,
+                             padding:'3px 0', fontWeight:700, color:'#92400e' }}
+                  />
+                </td>
+              ))}
+              <td colSpan={2} style={VTD}/>
+            </tr>
+            {/* Ghi chú */}
+            <tr style={{ background:'#f8fafc' }}>
+              <td colSpan={2} style={{ ...FTLBL, color:'#64748b' }}>Ghi chú</td>
+              {rows.map(row => (
+                <td key={row.row_index} style={{ ...VTD, padding:'3px 6px' }}>
+                  <input value={row.notes||''}
+                    onChange={e => patchRow(pid, row.row_index, {...row, notes: e.target.value||null})}
+                    placeholder="..."
+                    style={{ width:'100%', border:'1px solid #e2e8f0', background:'white',
+                             fontSize:11, outline:'none', borderRadius:5, padding:'3px 6px', color:'#475569' }}
+                  />
+                </td>
+              ))}
+              <td colSpan={2} style={VTD}/>
+            </tr>
+          </tfoot>
         </table>
       </div>
 
       <div style={{ padding:'5px 14px', fontSize:10, color:'#94a3b8', background:'white',
                     borderTop:'1px solid #f1f5f9', flexShrink:0 }}>
-        Tự lưu sau khi nhập · Ô xanh = tăng ca (&gt;8h) · Nền vàng = cuối tuần · + thêm dòng Việc Phụ
+        Tự lưu · Click tên cột để đổi · ⚡ điền 8h ngày thường · + thêm cột loại việc · Cuối tuần nền vàng · Tăng ca nền xanh
       </div>
     </div>
   )
@@ -723,4 +821,32 @@ const TD = {
 const SUM = {
   ...TD,
   background:'#e8ecf4', textAlign:'center', fontWeight:700, color:'#1a2744',
+}
+
+// vertical-layout table styles
+const VTH = {
+  background:'#1a2744', color:'white', padding:'8px 6px', textAlign:'center',
+  borderRight:'1px solid rgba(255,255,255,.12)', whiteSpace:'nowrap',
+  position:'sticky', top:0, zIndex:2, fontSize:11,
+}
+
+const VTD = {
+  padding:'2px 4px', borderBottom:'1px solid #f0f0f0', borderRight:'1px solid #f0f0f0',
+  verticalAlign:'middle',
+}
+
+const FTLBL = {
+  ...VTD, textAlign:'right', paddingRight:10, fontSize:11, fontWeight:700,
+  color:'#1a2744', background:'inherit',
+}
+
+function FTVAL(color) {
+  return { ...VTD, textAlign:'center', fontWeight:700, fontSize:13, color }
+}
+
+function HBTN(color, bg) {
+  return {
+    fontSize:9, padding:'2px 5px', background: bg, border:'none',
+    color, borderRadius:4, cursor:'pointer', fontWeight:600,
+  }
 }
