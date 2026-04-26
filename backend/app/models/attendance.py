@@ -1,5 +1,5 @@
 """
-Attendance (Chấm công) · WorkLog (Phân bổ công việc) · Project (Công trình)
+Attendance (Chấm công) · WorkLog (Phân bổ công việc theo vị trí/công trình)
 """
 import uuid
 from datetime import datetime, date, time
@@ -12,18 +12,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
 from app.db.session import Base
-
-
-class Project(Base):
-    """Công trình / dự án"""
-    __tablename__ = "projects"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    name: Mapped[str] = mapped_column(String(200), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Attendance(Base):
@@ -64,8 +52,8 @@ class WorkLog(Base):
         ForeignKey("personnel.id", ondelete="CASCADE"), nullable=False, index=True
     )
     date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
-    project_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+    location_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("locations.id", ondelete="CASCADE"), nullable=False, index=True
     )
     task_type: Mapped[str] = mapped_column(String(10), default="main")  # main / sub
     hours: Mapped[Decimal] = mapped_column(Numeric(4, 2), nullable=False)

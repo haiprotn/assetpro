@@ -1,5 +1,5 @@
 """
-Attendance / Chấm công — Projects, daily records, work log allocation, report, export
+Attendance / Chấm công — daily records, work log allocation (by location), report, export
 """
 from __future__ import annotations
 import calendar
@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.schemas.attendance import (
-    ProjectIn, ProjectOut,
     AttendanceUpsert, AttendanceOut,
     WorkLogIn, WorkLogOut,
 )
@@ -25,70 +24,7 @@ router = APIRouter()
 
 
 def _fmt_time(t) -> Optional[str]:
-    """Convert time object → 'HH:MM' string, or None."""
     return t.strftime("%H:%M") if t else None
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Projects (Công trình)
-# ─────────────────────────────────────────────────────────────────────────────
-
-@router.get("/projects", response_model=list[ProjectOut])
-async def list_projects(
-    db: AsyncSession = Depends(get_db),
-    _user=Depends(get_current_user),
-):
-    r = await db.execute(text("SELECT * FROM projects ORDER BY name"))
-    return [dict(row._mapping) for row in r.fetchall()]
-
-
-@router.post("/projects", response_model=ProjectOut)
-async def create_project(
-    body: ProjectIn,
-    db: AsyncSession = Depends(get_db),
-    _user=Depends(get_current_user),
-):
-    r = await db.execute(text("""
-        INSERT INTO projects (id, code, name, description, is_active)
-        VALUES (gen_random_uuid(), :code, :name, :description, :is_active)
-        RETURNING *
-    """), body.model_dump())
-    await db.commit()
-    return dict(r.fetchone()._mapping)
-
-
-@router.put("/projects/{project_id}", response_model=ProjectOut)
-async def update_project(
-    project_id: UUID,
-    body: ProjectIn,
-    db: AsyncSession = Depends(get_db),
-    _user=Depends(get_current_user),
-):
-    r = await db.execute(text("""
-        UPDATE projects SET code=:code, name=:name,
-            description=:description, is_active=:is_active
-        WHERE id=:id RETURNING *
-    """), {**body.model_dump(), "id": str(project_id)})
-    row = r.fetchone()
-    if not row:
-        raise HTTPException(404, "Không tìm thấy công trình")
-    await db.commit()
-    return dict(row._mapping)
-
-
-@router.delete("/projects/{project_id}", status_code=204)
-async def delete_project(
-    project_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    _user=Depends(get_current_user),
-):
-    r = await db.execute(
-        text("DELETE FROM projects WHERE id=:id RETURNING id"),
-        {"id": str(project_id)},
-    )
-    if not r.fetchone():
-        raise HTTPException(404, "Không tìm thấy công trình")
-    await db.commit()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -171,23 +107,23 @@ async def upsert_attendance(
             updated_at            = NOW()
         RETURNING id
     """), {
-        "pid":                str(personnel_id),
-        "date":               att_date,
-        "check_in":           body.check_in  or "",
-        "check_out":          body.check_out or "",
-        "total_hours":        body.total_hours,
-        "late_minutes":       body.late_minutes,
+        "pid":                 str(personnel_id),
+        "date":                att_date,
+        "check_in":            body.check_in  or "",
+        "check_out":           body.check_out or "",
+        "total_hours":         body.total_hours,
+        "late_minutes":        body.late_minutes,
         "early_leave_minutes": body.early_leave_minutes,
-        "overtime_hours":     body.overtime_hours,
-        "status":             body.status,
-        "notes":              body.notes,
+        "overtime_hours":      body.overtime_hours,
+        "status":              body.status,
+        "notes":               body.notes,
     })
     await db.commit()
     return {"ok": True, "id": str(r.scalar())}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Work logs (phân bổ giờ theo công trình)
+# Work logs (phân bổ giờ theo vị trí / công trình)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/work-logs", response_model=list[WorkLogOut])
@@ -195,7 +131,7 @@ async def list_work_logs(
     year:         int           = Query(...),
     month:        int           = Query(...),
     personnel_id: Optional[str] = Query(None),
-    project_id:   Optional[str] = Query(None),
+    location_id:  Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _user=Depends(get_current_user),
 ):
@@ -208,18 +144,18 @@ async def list_work_logs(
     if personnel_id:
         extra += " AND wl.personnel_id = :personnel_id::uuid"
         params["personnel_id"] = personnel_id
-    if project_id:
-        extra += " AND wl.project_id = :project_id::uuid"
-        params["project_id"] = project_id
+    if location_id:
+        extra += " AND wl.location_id = :location_id::uuid"
+        params["location_id"] = location_id
 
     r = await db.execute(text(f"""
         SELECT wl.*,
-               pr.name AS project_name,
-               pr.code AS project_code
+               loc.name AS location_name,
+               loc.code AS location_code
         FROM work_logs wl
-        JOIN projects pr ON pr.id = wl.project_id
+        JOIN locations loc ON loc.id = wl.location_id
         WHERE wl.date >= :date_from AND wl.date <= :date_to {extra}
-        ORDER BY wl.date, wl.personnel_id, pr.name
+        ORDER BY wl.date, wl.personnel_id, loc.name
     """), params)
 
     out = []
@@ -237,24 +173,24 @@ async def create_work_log(
     _user=Depends(get_current_user),
 ):
     r = await db.execute(text("""
-        INSERT INTO work_logs (id, personnel_id, date, project_id, task_type, hours, notes)
-        VALUES (gen_random_uuid(), :pid, :date, :project_id, :task_type, :hours, :notes)
+        INSERT INTO work_logs (id, personnel_id, date, location_id, task_type, hours, notes)
+        VALUES (gen_random_uuid(), :pid, :date, :location_id, :task_type, :hours, :notes)
         RETURNING id
     """), {
-        "pid":        str(body.personnel_id),
-        "date":       body.date,
-        "project_id": str(body.project_id),
-        "task_type":  body.task_type,
-        "hours":      body.hours,
-        "notes":      body.notes,
+        "pid":         str(body.personnel_id),
+        "date":        body.date,
+        "location_id": str(body.location_id),
+        "task_type":   body.task_type,
+        "hours":       body.hours,
+        "notes":       body.notes,
     })
     new_id = r.scalar()
     await db.commit()
 
     r2 = await db.execute(text("""
-        SELECT wl.*, pr.name AS project_name, pr.code AS project_code
+        SELECT wl.*, loc.name AS location_name, loc.code AS location_code
         FROM work_logs wl
-        JOIN projects pr ON pr.id = wl.project_id
+        JOIN locations loc ON loc.id = wl.location_id
         WHERE wl.id = :id
     """), {"id": str(new_id)})
     rec = dict(r2.fetchone()._mapping)
@@ -271,24 +207,24 @@ async def update_work_log(
 ):
     r = await db.execute(text("""
         UPDATE work_logs
-        SET project_id=:project_id, task_type=:task_type,
+        SET location_id=:location_id, task_type=:task_type,
             hours=:hours, notes=:notes, updated_at=NOW()
         WHERE id=:id RETURNING id
     """), {
-        "project_id": str(body.project_id),
-        "task_type":  body.task_type,
-        "hours":      body.hours,
-        "notes":      body.notes,
-        "id":         str(log_id),
+        "location_id": str(body.location_id),
+        "task_type":   body.task_type,
+        "hours":       body.hours,
+        "notes":       body.notes,
+        "id":          str(log_id),
     })
     if not r.fetchone():
         raise HTTPException(404, "Không tìm thấy")
     await db.commit()
 
     r2 = await db.execute(text("""
-        SELECT wl.*, pr.name AS project_name, pr.code AS project_code
+        SELECT wl.*, loc.name AS location_name, loc.code AS location_code
         FROM work_logs wl
-        JOIN projects pr ON pr.id = wl.project_id
+        JOIN locations loc ON loc.id = wl.location_id
         WHERE wl.id = :id
     """), {"id": str(log_id)})
     rec = dict(r2.fetchone()._mapping)
@@ -323,13 +259,13 @@ async def get_report(
     db: AsyncSession = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    num_days = calendar.monthrange(year, month)[1]
-    date_from = date(year, month, 1)
-    date_to   = date(year, month, num_days)
+    num_days   = calendar.monthrange(year, month)[1]
+    date_from  = date(year, month, 1)
+    date_to    = date(year, month, num_days)
     dept_clause = "AND p.department_id = :dept_id::uuid" if dept_id else ""
     params_dept = {"dept_id": dept_id} if dept_id else {}
 
-    # ── attendance ──────────────────────────────────────────────
+    # attendance
     att_r = await db.execute(text(f"""
         SELECT a.personnel_id, a.date, a.total_hours, a.overtime_hours,
                a.late_minutes, a.early_leave_minutes, a.status,
@@ -339,7 +275,7 @@ async def get_report(
         WHERE a.date >= :df AND a.date <= :dt {dept_clause}
     """), {"df": date_from, "dt": date_to, **params_dept})
 
-    att_map: dict = {}   # { pid: { day_int: {...} } }
+    att_map: dict = {}
     for row in att_r.fetchall():
         rec = dict(row._mapping)
         pid = str(rec["personnel_id"])
@@ -354,7 +290,7 @@ async def get_report(
             "check_out":           _fmt_time(rec.get("check_out")),
         }
 
-    # ── personnel list ──────────────────────────────────────────
+    # personnel
     p_r = await db.execute(text(f"""
         SELECT p.id, p.full_name, p.employee_code, p.position,
                d.name AS department_name
@@ -365,41 +301,40 @@ async def get_report(
     """), params_dept)
     all_p = [dict(r._mapping) for r in p_r.fetchall()]
 
-    # ── work logs ───────────────────────────────────────────────
+    # work logs  — group by pid → location_id
     wl_r = await db.execute(text("""
-        SELECT wl.personnel_id, wl.project_id, wl.hours,
-               pr.name AS project_name, pr.code AS project_code
+        SELECT wl.personnel_id, wl.location_id, wl.hours,
+               loc.name AS location_name, loc.code AS location_code
         FROM work_logs wl
-        JOIN projects pr ON pr.id = wl.project_id
+        JOIN locations loc ON loc.id = wl.location_id
         WHERE wl.date >= :df AND wl.date <= :dt
     """), {"df": date_from, "dt": date_to})
-    wl_map: dict = {}   # { pid: { proj_id: {hours, name, code} } }
+    wl_map: dict = {}
     for row in wl_r.fetchall():
-        rec = dict(row._mapping)
-        pid  = str(rec["personnel_id"])
-        prjid = str(rec["project_id"])
-        wl_map.setdefault(pid, {}).setdefault(prjid, {
-            "hours": 0, "name": rec["project_name"], "code": rec["project_code"],
+        rec   = dict(row._mapping)
+        pid   = str(rec["personnel_id"])
+        locid = str(rec["location_id"])
+        wl_map.setdefault(pid, {}).setdefault(locid, {
+            "hours": 0, "name": rec["location_name"], "code": rec["location_code"],
         })
-        wl_map[pid][prjid]["hours"] += float(rec.get("hours") or 0)
+        wl_map[pid][locid]["hours"] += float(rec.get("hours") or 0)
 
-    # ── projects list ───────────────────────────────────────────
-    proj_r = await db.execute(text(
-        "SELECT id, code, name FROM projects WHERE is_active=TRUE ORDER BY name"
+    # locations list (for filter dropdown)
+    loc_r = await db.execute(text(
+        "SELECT id, code, name FROM locations WHERE is_active=TRUE ORDER BY name"
     ))
-    projects = [{"id": str(r.id), "code": r.code, "name": r.name}
-                for r in proj_r.fetchall()]
+    locations = [{"id": str(r.id), "code": r.code, "name": r.name}
+                 for r in loc_r.fetchall()]
 
-    # ── build employee summaries ────────────────────────────────
     employees = []
     for p in all_p:
         pid       = str(p["id"])
         days_data = att_map.get(pid, {})
-        work_days = sum(1 for d in days_data.values()
-                        if d["status"] == "present" and d["total_hours"] > 0)
+        work_days  = sum(1 for d in days_data.values()
+                         if d["status"] == "present" and d["total_hours"] > 0)
         leave_days = sum(1 for d in days_data.values() if d["status"] == "leave")
-        total_h   = sum(d["total_hours"]    for d in days_data.values())
-        ot_h      = sum(d["overtime_hours"] for d in days_data.values())
+        total_h    = sum(d["total_hours"]    for d in days_data.values())
+        ot_h       = sum(d["overtime_hours"] for d in days_data.values())
 
         employees.append({
             "personnel_id":    pid,
@@ -419,7 +354,7 @@ async def get_report(
 
     return {
         "year": year, "month": month, "num_days": num_days,
-        "employees": employees, "projects": projects,
+        "employees": employees, "locations": locations,
     }
 
 
@@ -440,7 +375,7 @@ async def export_excel(
     from openpyxl.utils import get_column_letter
     from datetime import date as ddate
 
-    report = await get_report(year=year, month=month, dept_id=dept_id, db=db, _user=_user)
+    report    = await get_report(year=year, month=month, dept_id=dept_id, db=db, _user=_user)
     num_days  = report["num_days"]
     employees = report["employees"]
 
@@ -448,10 +383,8 @@ async def export_excel(
     ws = wb.active
     ws.title = f"Chấm công T{month:02d}-{year}"
 
-    thin   = Side(style="thin",   color="CCCCCC")
-    medium = Side(style="medium", color="1A2744")
-    bdr    = Border(left=thin, right=thin, top=thin, bottom=thin)
-
+    thin        = Side(style="thin",   color="CCCCCC")
+    bdr         = Border(left=thin, right=thin, top=thin, bottom=thin)
     hdr_fill    = PatternFill("solid", fgColor="1A2744")
     sub_fill    = PatternFill("solid", fgColor="E8ECF4")
     alt_fill    = PatternFill("solid", fgColor="F8FAFC")
@@ -461,11 +394,10 @@ async def export_excel(
     wknd_fill   = PatternFill("solid", fgColor="2D4A8A")
 
     hf = Font(bold=True, color="FFFFFF", size=9)
-    sf = Font(bold=True, size=9)
 
     def hc(r, c, v, bg=hdr_fill):
         cell = ws.cell(row=r, column=c, value=v)
-        cell.font = hf if bg == hdr_fill else Font(bold=True, color="FFFFFF", size=9)
+        cell.font = Font(bold=True, color="FFFFFF", size=9)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.border = bdr
         cell.fill = bg
@@ -484,20 +416,17 @@ async def export_excel(
     total_cols  = 4 + num_days + len(sum_headers)
 
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
-    title_cell = ws.cell(row=1, column=1,
-                         value=f"BẢNG CHẤM CÔNG – THÁNG {month:02d}/{year}")
-    title_cell.font      = Font(bold=True, size=14, color="1A2744")
-    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    t = ws.cell(row=1, column=1, value=f"BẢNG CHẤM CÔNG – THÁNG {month:02d}/{year}")
+    t.font      = Font(bold=True, size=14, color="1A2744")
+    t.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 28
 
-    # Header row 2
     for ci, h in enumerate(["STT", "Họ và tên", "Bộ phận", "Chức vụ"], start=1):
         hc(2, ci, h)
     for d in range(1, num_days + 1):
         dow = ddate(year, month, d).weekday()
         bg  = wknd_fill if dow >= 5 else hdr_fill
-        cell = hc(2, 4 + d, str(d), bg=bg)
-        cell.value = f"{d}\n{'CN' if dow==6 else ['T2','T3','T4','T5','T6','T7'][dow]}"
+        hc(2, 4 + d, f"{d}\n{'CN' if dow==6 else ['T2','T3','T4','T5','T6','T7'][dow]}", bg=bg)
     sum_fill = PatternFill("solid", fgColor="2D3F6B")
     for ci, h in enumerate(sum_headers, start=5 + num_days):
         hc(2, ci, h, bg=sum_fill)
@@ -514,10 +443,10 @@ async def export_excel(
     ws.freeze_panes = "E3"
 
     for stt, emp in enumerate(employees, 1):
-        dr  = stt + 2
-        bg  = alt_fill if stt % 2 == 0 else None
+        dr = stt + 2
+        bg = alt_fill if stt % 2 == 0 else None
         dc(dr, 1, stt, fill=bg)
-        dc(dr, 2, emp["full_name"],            fill=bg, align="left", bold=True)
+        dc(dr, 2, emp["full_name"],             fill=bg, align="left", bold=True)
         dc(dr, 3, emp.get("department_name") or "", fill=bg, align="left")
         dc(dr, 4, emp.get("position")        or "", fill=bg, align="left")
 

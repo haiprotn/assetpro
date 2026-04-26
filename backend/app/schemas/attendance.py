@@ -5,23 +5,6 @@ from uuid import UUID
 from pydantic import BaseModel
 
 
-class ProjectIn(BaseModel):
-    code: str
-    name: str
-    description: Optional[str] = None
-    is_active: bool = True
-
-
-class ProjectOut(BaseModel):
-    id: UUID
-    code: str
-    name: str
-    description: Optional[str] = None
-    is_active: bool
-    created_at: datetime
-    model_config = {"from_attributes": True}
-
-
 class AttendanceUpsert(BaseModel):
     check_in: Optional[str] = None          # "HH:MM" or null
     check_out: Optional[str] = None         # "HH:MM" or null
@@ -57,7 +40,7 @@ class AttendanceOut(BaseModel):
 class WorkLogIn(BaseModel):
     personnel_id: UUID
     date: date
-    project_id: UUID
+    location_id: UUID
     task_type: str = "main"                 # main / sub
     hours: float
     notes: Optional[str] = None
@@ -67,9 +50,9 @@ class WorkLogOut(BaseModel):
     id: UUID
     personnel_id: UUID
     date: date
-    project_id: UUID
-    project_name: Optional[str] = None
-    project_code: Optional[str] = None
+    location_id: UUID
+    location_name: Optional[str] = None
+    location_code: Optional[str] = None
     task_type: str
     hours: float
     notes: Optional[str] = None

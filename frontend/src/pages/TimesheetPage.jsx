@@ -6,7 +6,7 @@
  */
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { attendanceApi, personnelApi, deptApi } from '../services/api'
+import { attendanceApi, personnelApi, deptApi, locationApi } from '../services/api'
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
@@ -60,7 +60,6 @@ export default function TimesheetPage() {
   const [selPid,  setSelPid]  = useState(null)
   const [tab,     setTab]     = useState('attendance')   // attendance | worklogs | report
   const [saving,  setSaving]  = useState(false)
-  const [showProjMgr, setShowProjMgr] = useState(false)
 
   // local att drafts: { "pid:YYYY-MM-DD": draft }
   const [localAtt, setLocalAtt] = useState({})
@@ -88,9 +87,9 @@ export default function TimesheetPage() {
     queryFn: () => deptApi.list().then(r => r.data),
   })
 
-  const { data: projects = [] } = useQuery({
-    queryKey: ['projects'],
-    queryFn: () => attendanceApi.listProjects().then(r => r.data),
+  const { data: locations = [] } = useQuery({
+    queryKey: ['locations'],
+    queryFn: () => locationApi.list().then(r => r.data),
   })
 
   const { data: workLogs = [] } = useQuery({
@@ -98,7 +97,7 @@ export default function TimesheetPage() {
     queryFn: () => attendanceApi.listWorkLogs({ year, month }).then(r => r.data),
   })
 
-  const { data: reportData } = useQuery({
+  const { data: reportData, isLoading: loadReport } = useQuery({
     queryKey: ['att-report', year, month, deptId],
     queryFn: () => attendanceApi.report({ year, month, ...(deptId ? { dept_id: deptId } : {}) })
       .then(r => r.data),
@@ -262,11 +261,6 @@ export default function TimesheetPage() {
         {saving && <span style={{ fontSize:11, color:'#64748b', marginLeft:4 }}>Đang lưu...</span>}
         <div style={{ flex:1 }} />
 
-        <button
-          onClick={() => setShowProjMgr(true)}
-          style={{ ...BTN, background:'#f1f5f9', color:'#475569', border:'1px solid #dde1e7' }}
-        >🏗️ Công trình</button>
-
         <button onClick={handleExport} style={{ ...BTN, background:'#1a2744', color:'white' }}>
           ⬇ Xuất Excel
         </button>
@@ -308,7 +302,7 @@ export default function TimesheetPage() {
               month={month}
               days={days}
               workLogs={workLogs}
-              projects={projects}
+              locations={locations.filter(l => l.is_active !== false)}
               getAtt={getAtt}
               qc={qc}
             />
@@ -328,14 +322,6 @@ export default function TimesheetPage() {
         </div>
       </div>
 
-      {/* Project manager modal */}
-      {showProjMgr && (
-        <ProjectModal
-          projects={projects}
-          qc={qc}
-          onClose={() => setShowProjMgr(false)}
-        />
-      )}
     </div>
   )
 }
@@ -567,13 +553,13 @@ function AttendanceGrid({ person, days, year, month, getAtt, patchAtt, handleTim
 
 // ─── WorkLogPanel ─────────────────────────────────────────────────────────────
 
-function WorkLogPanel({ person, year, month, days, workLogs, projects, getAtt, qc }) {
+function WorkLogPanel({ person, year, month, days, workLogs, locations, getAtt, qc }) {
   const pid = String(person.id)
 
   const [selDay, setSelDay] = useState(
     () => Math.min(today.getDate(), days.length)
   )
-  const [newForm, setNewForm] = useState({ project_id:'', task_type:'main', hours:'', notes:'' })
+  const [newForm, setNewForm] = useState({ location_id:'', task_type:'main', hours:'', notes:'' })
   const [editId,  setEditId]  = useState(null)
   const [editForm, setEditForm] = useState({})
 
@@ -588,7 +574,7 @@ function WorkLogPanel({ person, year, month, days, workLogs, projects, getAtt, q
 
   const createMut = useMutation({
     mutationFn: (data) => attendanceApi.createWorkLog(data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['work-logs'] }); setNewForm({ project_id:'', task_type:'main', hours:'', notes:'' }) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['work-logs'] }); setNewForm({ location_id:'', task_type:'main', hours:'', notes:'' }) },
   })
   const updateMut = useMutation({
     mutationFn: ({ id, data }) => attendanceApi.updateWorkLog(id, data),
@@ -600,21 +586,21 @@ function WorkLogPanel({ person, year, month, days, workLogs, projects, getAtt, q
   })
 
   function submitNew() {
-    if (!newForm.project_id || !newForm.hours) return
+    if (!newForm.location_id || !newForm.hours) return
     createMut.mutate({
       personnel_id: person.id, date: dateStr,
-      project_id: newForm.project_id, task_type: newForm.task_type,
+      location_id: newForm.location_id, task_type: newForm.task_type,
       hours: parseFloat(newForm.hours), notes: newForm.notes || null,
     })
   }
 
-  // ── month summary by project ───────────────────────────────
+  // ── month summary by location ───────────────────────────────
   const monthLogs = workLogs.filter(wl => String(wl.personnel_id) === pid)
-  const projSummary = {}
+  const locSummary = {}
   for (const wl of monthLogs) {
-    const key = wl.project_id
-    projSummary[key] = projSummary[key] || { name: wl.project_name, code: wl.project_code, hours: 0 }
-    projSummary[key].hours += parseFloat(wl.hours || 0)
+    const key = wl.location_id
+    locSummary[key] = locSummary[key] || { name: wl.location_name, code: wl.location_code, hours: 0 }
+    locSummary[key].hours += parseFloat(wl.hours || 0)
   }
 
   return (
@@ -631,9 +617,9 @@ function WorkLogPanel({ person, year, month, days, workLogs, projects, getAtt, q
           </div>
         </div>
         <div style={{ flex:1 }} />
-        {/* Month project summary */}
-        {Object.values(projSummary).map(ps => (
-          <SChip key={ps.code} label={ps.code || ps.name} val={ps.hours.toFixed(1)} unit="h" c="#fbbf24" />
+        {/* Month location summary */}
+        {Object.values(locSummary).map(ls => (
+          <SChip key={ls.code} label={ls.code || ls.name} val={ls.hours.toFixed(1)} unit="h" c="#fbbf24" />
         ))}
       </div>
 
@@ -678,20 +664,20 @@ function WorkLogPanel({ person, year, month, days, workLogs, projects, getAtt, q
             🟦 Có chấm công · 🟩 Có phân bổ
           </div>
 
-          {/* Month summary */}
-          {Object.keys(projSummary).length > 0 && (
+          {/* Month location summary */}
+          {Object.keys(locSummary).length > 0 && (
             <div style={{ marginTop:16 }}>
               <div style={{ fontWeight:700, fontSize:12, color:'#1e293b', marginBottom:6 }}>
-                Tổng tháng theo công trình
+                Tổng tháng theo vị trí
               </div>
-              {Object.values(projSummary).map(ps => (
-                <div key={ps.code} style={{
+              {Object.values(locSummary).map(ls => (
+                <div key={ls.code} style={{
                   display:'flex', justifyContent:'space-between', alignItems:'center',
                   padding:'4px 8px', borderRadius:6, background:'#f8fafc',
                   marginBottom:3, fontSize:12,
                 }}>
-                  <span style={{ color:'#1e293b', fontWeight:600 }}>{ps.name}</span>
-                  <span style={{ color:'#16a34a', fontWeight:700 }}>{ps.hours.toFixed(1)}h</span>
+                  <span style={{ color:'#1e293b', fontWeight:600 }}>{ls.name}</span>
+                  <span style={{ color:'#16a34a', fontWeight:700 }}>{ls.hours.toFixed(1)}h</span>
                 </div>
               ))}
             </div>
@@ -755,11 +741,11 @@ function WorkLogPanel({ person, year, month, days, workLogs, projects, getAtt, q
                       <>
                         <td style={ATD}>
                           <select
-                            value={editForm.project_id}
-                            onChange={e => setEditForm({...editForm, project_id: e.target.value})}
+                            value={editForm.location_id}
+                            onChange={e => setEditForm({...editForm, location_id: e.target.value})}
                             style={{ width:'100%', border:'none', fontSize:11, outline:'none' }}
                           >
-                            {projects.map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+                            {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                           </select>
                         </td>
                         <td style={ATD}>
@@ -788,7 +774,7 @@ function WorkLogPanel({ person, year, month, days, workLogs, projects, getAtt, q
                         <td style={{ ...ATD, width:70 }}>
                           <button onClick={() => updateMut.mutate({ id: wl.id, data: {
                             personnel_id: person.id, date: dateStr,
-                            project_id: editForm.project_id, task_type: editForm.task_type,
+                            location_id: editForm.location_id, task_type: editForm.task_type,
                             hours: parseFloat(editForm.hours), notes: editForm.notes,
                           }})} style={{ ...SBTN, background:'#16a34a', color:'white' }}>✓</button>
                           <button onClick={() => setEditId(null)}
@@ -797,7 +783,7 @@ function WorkLogPanel({ person, year, month, days, workLogs, projects, getAtt, q
                       </>
                     ) : (
                       <>
-                        <td style={ATD}><strong>{wl.project_name}</strong><br/><span style={{ color:'#94a3b8', fontSize:10 }}>{wl.project_code}</span></td>
+                        <td style={ATD}><strong>{wl.location_name}</strong><br/><span style={{ color:'#94a3b8', fontSize:10 }}>{wl.location_code}</span></td>
                         <td style={{ ...ATD, textAlign:'center' }}>
                           <Chip c={wl.task_type==='main'?'#2563eb':'#7c3aed'}
                                 bg={wl.task_type==='main'?'#dbeafe':'#ede9fe'}>
@@ -810,7 +796,7 @@ function WorkLogPanel({ person, year, month, days, workLogs, projects, getAtt, q
                         <td style={{ ...ATD, color:'#64748b' }}>{wl.notes||''}</td>
                         <td style={{ ...ATD, width:60 }}>
                           <button onClick={() => { setEditId(wl.id); setEditForm({
-                            project_id: wl.project_id, task_type: wl.task_type,
+                            location_id: wl.location_id, task_type: wl.task_type,
                             hours: wl.hours, notes: wl.notes||'',
                           })}} style={{ ...SBTN, background:'#dbeafe', color:'#2563eb' }}>✏</button>
                           <button onClick={() => { if(window.confirm('Xoá?')) deleteMut.mutate(wl.id) }}
@@ -825,7 +811,7 @@ function WorkLogPanel({ person, year, month, days, workLogs, projects, getAtt, q
           )}
 
           {/* Add new work log */}
-          {projects.length > 0 ? (
+          {locations.length > 0 ? (
             <div style={{
               padding:'12px', borderRadius:10, border:'1.5px dashed #cbd5e1',
               background:'#f8fafc',
@@ -835,14 +821,14 @@ function WorkLogPanel({ person, year, month, days, workLogs, projects, getAtt, q
               </div>
               <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'flex-end' }}>
                 <div>
-                  <label style={{ fontSize:10, color:'#94a3b8' }}>Công trình</label>
+                  <label style={{ fontSize:10, color:'#94a3b8' }}>Vị trí / Công trình</label>
                   <select
-                    value={newForm.project_id}
-                    onChange={e => setNewForm({...newForm, project_id: e.target.value})}
+                    value={newForm.location_id}
+                    onChange={e => setNewForm({...newForm, location_id: e.target.value})}
                     style={{ ...SEL, display:'block', marginTop:2 }}
                   >
                     <option value="">Chọn...</option>
-                    {projects.map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+                    {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                   </select>
                 </div>
                 <div>
@@ -877,18 +863,18 @@ function WorkLogPanel({ person, year, month, days, workLogs, projects, getAtt, q
                 </div>
                 <button
                   onClick={submitNew}
-                  disabled={!newForm.project_id || !newForm.hours}
+                  disabled={!newForm.location_id || !newForm.hours}
                   style={{
                     ...BTN,
-                    background: newForm.project_id && newForm.hours ? '#16a34a' : '#e2e8f0',
-                    color:      newForm.project_id && newForm.hours ? 'white'   : '#94a3b8',
+                    background: newForm.location_id && newForm.hours ? '#16a34a' : '#e2e8f0',
+                    color:      newForm.location_id && newForm.hours ? 'white'   : '#94a3b8',
                   }}
                 >Thêm</button>
               </div>
             </div>
           ) : (
             <div style={{ padding:12, borderRadius:10, background:'#fffbeb', color:'#92400e', fontSize:12 }}>
-              ⚠ Chưa có công trình. Nhấn "🏗️ Công trình" ở thanh trên để thêm.
+              ⚠ Chưa có vị trí nào. Vào <strong>Vị trí</strong> trong menu để thêm công trình.
             </div>
           )}
         </div>
@@ -900,7 +886,7 @@ function WorkLogPanel({ person, year, month, days, workLogs, projects, getAtt, q
 // ─── ReportMatrix ─────────────────────────────────────────────────────────────
 
 function ReportMatrix({ reportData, year, month }) {
-  const [projFilter, setProjFilter] = useState('')
+  const [locFilter, setLocFilter] = useState('')
 
   if (!reportData) return (
     <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'#94a3b8' }}>
@@ -908,11 +894,11 @@ function ReportMatrix({ reportData, year, month }) {
     </div>
   )
 
-  const { employees, projects, num_days } = reportData
+  const { employees, locations, num_days } = reportData
   const days = Array.from({ length: num_days }, (_, i) => i + 1)
 
-  const filtEmp = projFilter
-    ? employees.filter(emp => emp.work_logs?.[projFilter])
+  const filtEmp = locFilter
+    ? employees.filter(emp => emp.work_logs?.[locFilter])
     : employees
 
   return (
@@ -925,9 +911,9 @@ function ReportMatrix({ reportData, year, month }) {
         <span style={{ fontWeight:700, fontSize:13, color:'#1a2744' }}>
           Báo cáo tháng {month}/{year}
         </span>
-        <select style={SEL} value={projFilter} onChange={e => setProjFilter(e.target.value)}>
-          <option value="">Tất cả công trình</option>
-          {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        <select style={SEL} value={locFilter} onChange={e => setLocFilter(e.target.value)}>
+          <option value="">Tất cả vị trí</option>
+          {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
         <span style={{ fontSize:11, color:'#94a3b8' }}>{filtEmp.length} nhân viên</span>
       </div>
@@ -956,9 +942,9 @@ function ReportMatrix({ reportData, year, month }) {
               {['Ngày công','Tổng giờ','OT (h)','Nghỉ phép'].map(h => (
                 <th key={h} style={{ ...ATH, width:60, background:'#2d3f6b' }}>{h}</th>
               ))}
-              {projFilter && projects.find(p=>p.id===projFilter) && (
+              {locFilter && locations.find(l=>l.id===locFilter) && (
                 <th style={{ ...ATH, width:80, background:'#064e3b' }}>
-                  {projects.find(p=>p.id===projFilter)?.name} (h)
+                  {locations.find(l=>l.id===locFilter)?.name} (h)
                 </th>
               )}
             </tr>
@@ -1015,11 +1001,11 @@ function ReportMatrix({ reportData, year, month }) {
                   <td style={{ ...ATD, textAlign:'center', fontWeight:700, background:'#e8ecf4' }}>
                     {emp.summary.leave_days||''}
                   </td>
-                  {projFilter && (
+                  {locFilter && (
                     <td style={{ ...ATD, textAlign:'center', fontWeight:700, background:'#ecfdf5',
                                   color:'#16a34a' }}>
-                      {emp.work_logs?.[projFilter]
-                        ? emp.work_logs[projFilter].hours.toFixed(1)
+                      {emp.work_logs?.[locFilter]
+                        ? emp.work_logs[locFilter].hours.toFixed(1)
                         : ''}
                     </td>
                   )}
@@ -1028,99 +1014,6 @@ function ReportMatrix({ reportData, year, month }) {
             })}
           </tbody>
         </table>
-      </div>
-    </div>
-  )
-}
-
-// ─── ProjectModal ─────────────────────────────────────────────────────────────
-
-function ProjectModal({ projects, qc, onClose }) {
-  const [form,   setForm]   = useState({ code:'', name:'', description:'', is_active:true })
-  const [editId, setEditId] = useState(null)
-
-  const createMut = useMutation({
-    mutationFn: (data) => attendanceApi.createProject(data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey:['projects'] }); setForm({ code:'', name:'', description:'', is_active:true }) },
-  })
-  const updateMut = useMutation({
-    mutationFn: ({ id, data }) => attendanceApi.updateProject(id, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey:['projects'] }); setEditId(null) },
-  })
-  const deleteMut = useMutation({
-    mutationFn: (id) => attendanceApi.deleteProject(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey:['projects'] }),
-  })
-
-  return (
-    <div style={{
-      position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:9999,
-      display:'flex', alignItems:'center', justifyContent:'center',
-    }}>
-      <div style={{
-        background:'white', borderRadius:14, width:560, maxHeight:'80vh',
-        display:'flex', flexDirection:'column', boxShadow:'0 20px 60px #0003',
-      }}>
-        <div style={{ padding:'16px 20px', borderBottom:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <span style={{ fontWeight:800, fontSize:16, color:'#1a2744' }}>🏗️ Quản lý công trình</span>
-          <button onClick={onClose} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:'#64748b' }}>×</button>
-        </div>
-
-        {/* Add form */}
-        <div style={{ padding:'14px 20px', borderBottom:'1px solid #f1f5f9' }}>
-          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-            <input placeholder="Mã CT (vd: CT-01)" value={form.code}
-              onChange={e => setForm({...form, code: e.target.value})}
-              style={{ ...SEL, width:120 }} />
-            <input placeholder="Tên công trình" value={form.name}
-              onChange={e => setForm({...form, name: e.target.value})}
-              style={{ ...SEL, flex:1, minWidth:150 }} />
-            <input placeholder="Mô tả" value={form.description}
-              onChange={e => setForm({...form, description: e.target.value})}
-              style={{ ...SEL, flex:1, minWidth:100 }} />
-            <button
-              onClick={() => createMut.mutate(form)}
-              disabled={!form.code || !form.name}
-              style={{ ...BTN, background: form.code&&form.name ? '#16a34a' : '#e2e8f0',
-                               color: form.code&&form.name ? 'white' : '#94a3b8' }}
-            >+ Thêm</button>
-          </div>
-        </div>
-
-        {/* List */}
-        <div style={{ flex:1, overflowY:'auto', padding:'8px 20px' }}>
-          {projects.length === 0
-            ? <div style={{ padding:20, textAlign:'center', color:'#94a3b8' }}>Chưa có công trình nào</div>
-            : projects.map(pr => (
-              <div key={pr.id} style={{
-                display:'flex', alignItems:'center', gap:10, padding:'8px 10px',
-                borderRadius:8, marginBottom:4, background:'#f8fafc', border:'1px solid #f1f5f9',
-              }}>
-                {editId === pr.id ? (
-                  <>
-                    <input value={form.code}    onChange={e=>setForm({...form,code:e.target.value})}    style={{...SEL,width:90}} />
-                    <input value={form.name}    onChange={e=>setForm({...form,name:e.target.value})}    style={{...SEL,flex:1}} />
-                    <input value={form.description||''} onChange={e=>setForm({...form,description:e.target.value})} style={{...SEL,flex:1}} />
-                    <button onClick={()=>updateMut.mutate({id:pr.id,data:form})}
-                      style={{...SBTN,background:'#16a34a',color:'white'}}>✓</button>
-                    <button onClick={()=>setEditId(null)}
-                      style={{...SBTN,background:'#f1f5f9',color:'#475569'}}>×</button>
-                  </>
-                ) : (
-                  <>
-                    <Chip c="#2563eb" bg="#dbeafe">{pr.code}</Chip>
-                    <span style={{ fontWeight:600, fontSize:13, color:'#1e293b', flex:1 }}>{pr.name}</span>
-                    {pr.description && <span style={{ fontSize:11, color:'#94a3b8' }}>{pr.description}</span>}
-                    <button onClick={()=>{setEditId(pr.id);setForm({code:pr.code,name:pr.name,description:pr.description||'',is_active:pr.is_active})}}
-                      style={{...SBTN,background:'#dbeafe',color:'#2563eb'}}>✏</button>
-                    <button onClick={()=>{if(window.confirm('Xoá công trình?'))deleteMut.mutate(pr.id)}}
-                      style={{...SBTN,background:'#fee2e2',color:'#dc2626'}}>🗑</button>
-                  </>
-                )}
-              </div>
-            ))
-          }
-        </div>
       </div>
     </div>
   )
