@@ -40,7 +40,8 @@ export default function TimesheetPage() {
   const [search, setSearch] = useState('')
   const [selPid, setSelPid] = useState(null)
   const [tab,    setTab]    = useState('input')   // input | report
-  const [saving, setSaving] = useState(false)
+  const [saving,     setSaving]     = useState(false)
+  const [saveStatus, setSaveStatus] = useState('idle') // idle | saving | saved
 
   const numDays = daysInMonth(year, month)
   const days    = Array.from({ length: numDays }, (_, i) => i + 1)
@@ -99,7 +100,10 @@ export default function TimesheetPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['timesheet', year, month, deptId] })
       setNewRows({})
+      setSaveStatus('saved')
+      setTimeout(() => setSaveStatus('idle'), 2500)
     },
+    onError: () => setSaveStatus('idle'),
   })
 
   const delMut = useMutation({
@@ -111,16 +115,19 @@ export default function TimesheetPage() {
 
   const triggerSave = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(async () => {
-      const batch = pendingRef.current
-      if (!Object.keys(batch).length) return
-      pendingRef.current = {}
-      const payload = Object.values(batch)
-      setSaving(true)
-      try { await saveMut.mutateAsync(payload) }
-      finally { setSaving(false) }
-    }, 800)
+    saveTimer.current = setTimeout(async () => flushSave(), 800)
   }, [saveMut])
+
+  async function flushSave() {
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null }
+    const batch = pendingRef.current
+    if (!Object.keys(batch).length) return
+    pendingRef.current = {}
+    const payload = Object.values(batch)
+    setSaving(true); setSaveStatus('saving')
+    try { await saveMut.mutateAsync(payload) }
+    finally { setSaving(false) }
+  }
 
   // ── Get merged rows for a person ───────────────────────────────────────────
 
@@ -331,6 +338,9 @@ export default function TimesheetPage() {
                   addRow={addRow}
                   delMut={delMut}
                   setDrafts={setDrafts}
+                  saving={saving}
+                  saveStatus={saveStatus}
+                  flushSave={flushSave}
                 />
               : <Empty text="Chọn nhân viên để nhập chấm công" />
           )}
@@ -354,7 +364,7 @@ export default function TimesheetPage() {
 
 // ─── InputGrid (vertical: rows=days, cols=work-types) ────────────────────────
 
-function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchRow, addRow, delMut, setDrafts }) {
+function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchRow, addRow, delMut, setDrafts, saving, saveStatus, flushSave }) {
   const pid = String(person.id)
   const [editCol, setEditCol] = useState(null)
 
@@ -431,6 +441,24 @@ function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchR
   const mainRow = rows.find(r=>r.row_index===0)||null
   const subRows = rows.filter(r=>r.row_index>0)
 
+  // Per-day notes stored as JSON in mainRow.notes  e.g. {"1":"ghi chú","3":"..."}
+  const dayNotes = (() => {
+    try { const p = JSON.parse(mainRow?.notes||'{}'); return typeof p==='object' ? p : {} }
+    catch { return {} }
+  })()
+
+  function setDayNote(day, note) {
+    const next = { ...dayNotes }
+    if (note?.trim()) next[String(day)] = note.trim()
+    else delete next[String(day)]
+    const base = mainRow || {
+      id:null, personnel_id:pid, year, month, row_index:0,
+      row_label:null, work_description:'Làm việc chuyên môn',
+      hours:{}, leave_days:0, notes:null,
+    }
+    patchRow(pid, 0, { ...base, notes: Object.keys(next).length ? JSON.stringify(next) : null })
+  }
+
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
 
@@ -450,6 +478,18 @@ function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchR
           padding:'5px 12px', borderRadius:8, border:'none', cursor:'pointer',
           background:'rgba(251,191,36,.2)', color:'#fbbf24', fontSize:12, fontWeight:700,
         }}>⚡ Check đủ ngày thường</button>
+
+        {/* Save button + status */}
+        <button onClick={flushSave} disabled={saving} style={{
+          padding:'5px 14px', borderRadius:8, border:'none', cursor: saving ? 'wait' : 'pointer',
+          background: saveStatus==='saved' ? '#16a34a' : 'rgba(255,255,255,.15)',
+          color: 'white', fontSize:12, fontWeight:700, transition:'background .3s',
+          display:'flex', alignItems:'center', gap:5,
+        }}>
+          {saving ? '⏳' : saveStatus==='saved' ? '✓' : '💾'}
+          {saving ? 'Đang lưu...' : saveStatus==='saved' ? 'Đã lưu' : 'Lưu'}
+        </button>
+
         <SChip label="Ngày công" val={workDays} unit="ngày" c="#60a5fa" />
         <SChip label="Tổng giờ"  val={totalH}   unit="giờ"  c="#34d399" />
         <SChip label="Tăng ca"   val={otH}       unit="giờ"  c="#fbbf24" />
@@ -457,16 +497,17 @@ function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchR
 
       {/* Table */}
       <div style={{ flex:1, overflow:'auto' }}>
-        <table style={{ borderCollapse:'collapse', fontSize:13 }}>
+        <table style={{ borderCollapse:'collapse', fontSize:13, tableLayout:'fixed', minWidth:'100%' }}>
           <colgroup>
             <col style={{width:44}}/>{/* Ngày */}
-            <col style={{width:36}}/>{/* Thứ */}
-            <col style={{width:34}}/>{/* S */}
-            <col style={{width:34}}/>{/* C */}
-            <col style={{width:80}}/>{/* Việc Chính auto */}
+            <col style={{width:38}}/>{/* Thứ */}
+            <col style={{width:36}}/>{/* S */}
+            <col style={{width:36}}/>{/* C */}
+            <col style={{width:82}}/>{/* Việc Chính auto */}
             {subRows.map(r=><col key={r.row_index} style={{width:84}}/>)}
             <col style={{width:28}}/>{/* + */}
             <col style={{width:58}}/>{/* Total */}
+            <col style={{width:160}}/>{/* Ghi chú ngày */}
           </colgroup>
 
           <thead>
@@ -529,6 +570,9 @@ function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchR
                   onClick={()=>addRow(pid)} title="Thêm Việc Phụ">+</th>
               <th style={{...VTH,background:'#2d3f6b',borderLeft:'2px solid rgba(255,255,255,.2)'}}>
                 Tổng<br/><span style={{fontSize:8,opacity:.6}}>giờ</span>
+              </th>
+              <th style={{...VTH,background:'#374151',textAlign:'left',paddingLeft:8}}>
+                Ghi chú ngày
               </th>
             </tr>
           </thead>
@@ -624,6 +668,21 @@ function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchR
                     color:isOt?'#16a34a':dayTot>0?'#1e293b':'#e2e8f0'}}>
                     {dayTot>0 ? +dayTot.toFixed(1) : '–'}
                   </td>
+                  {/* Per-day note */}
+                  <td style={{...VTD, padding:'2px 6px', background: dayNotes[String(d)] ? '#fffbeb' : rowBg}}>
+                    <input
+                      value={dayNotes[String(d)]||''}
+                      onChange={e => setDayNote(d, e.target.value)}
+                      placeholder="Ghi chú..."
+                      style={{
+                        width:'100%', border:'none', background:'transparent',
+                        fontSize:11, outline:'none', color:'#475569',
+                        overflow:'hidden', textOverflow:'ellipsis',
+                      }}
+                      onFocus={e => e.target.style.background='white'}
+                      onBlur={e  => e.target.style.background='transparent'}
+                    />
+                  </td>
                 </tr>
               )
             })}
@@ -635,18 +694,21 @@ function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchR
               <td style={FTVAL('#059669')}>{calcRow(mainRow?.hours||{},numDays).total||'–'}</td>
               {subRows.map(row=>{const{total}=calcRow(row.hours||{},numDays);return <td key={row.row_index} style={FTVAL('#7c3aed')}>{total||'–'}</td>})}
               <td style={VTD}/><td style={{...FTVAL('#16a34a'),borderLeft:'2px solid #e2e8f0'}}>{totalH||'–'}</td>
+              <td style={VTD}/>
             </tr>
             <tr style={{background:'#f1f5f9'}}>
               <td colSpan={4} style={FTLBL}>Ngày công</td>
               <td style={FTVAL('#2563eb')}>{calcRow(mainRow?.hours||{},numDays).workDays||'–'}</td>
               {subRows.map(row=><td key={row.row_index} style={VTD}/>)}
               <td style={VTD}/><td style={{...FTVAL('#2563eb'),borderLeft:'2px solid #e2e8f0'}}>{workDays||'–'}</td>
+              <td style={VTD}/>
             </tr>
             <tr style={{background:'#f1f5f9'}}>
               <td colSpan={4} style={FTLBL}>Tăng ca (h)</td>
               <td style={VTD}/>
               {subRows.map(row=><td key={row.row_index} style={VTD}/>)}
               <td style={VTD}/><td style={{...FTVAL(otH>0?'#d97706':'#94a3b8'),borderLeft:'2px solid #e2e8f0'}}>{otH||'–'}</td>
+              <td style={VTD}/>
             </tr>
             <tr style={{background:'#fffbeb'}}>
               <td colSpan={4} style={{...FTLBL,color:'#92400e'}}>Nghỉ phép</td>
@@ -659,34 +721,14 @@ function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchR
                     fontSize:13,outline:'none',borderRadius:5,padding:'3px 0',fontWeight:700,color:'#92400e'}}/>
               </td>
               {subRows.map(row=><td key={row.row_index} style={VTD}/>)}
-              <td colSpan={2} style={VTD}/>
-            </tr>
-            <tr style={{background:'#f8fafc'}}>
-              <td colSpan={4} style={{...FTLBL,color:'#64748b'}}>Ghi chú</td>
-              <td style={{...VTD,padding:'3px 5px'}}>
-                <input value={mainRow?.notes||''}
-                  onChange={e=>mainRow&&patchRow(pid,0,{...mainRow,notes:e.target.value||null})}
-                  placeholder="..."
-                  style={{width:'100%',border:'1px solid #e2e8f0',background:'white',fontSize:11,
-                    outline:'none',borderRadius:5,padding:'3px 6px',color:'#475569'}}/>
-              </td>
-              {subRows.map(row=>(
-                <td key={row.row_index} style={{...VTD,padding:'3px 5px'}}>
-                  <input value={row.notes||''}
-                    onChange={e=>patchRow(pid,row.row_index,{...row,notes:e.target.value||null})}
-                    placeholder="..."
-                    style={{width:'100%',border:'1px solid #e2e8f0',background:'white',fontSize:11,
-                      outline:'none',borderRadius:5,padding:'3px 6px',color:'#475569'}}/>
-                </td>
-              ))}
-              <td colSpan={2} style={VTD}/>
+              <td colSpan={3} style={VTD}/>
             </tr>
           </tfoot>
         </table>
       </div>
 
       <div style={{padding:'5px 14px',fontSize:10,color:'#94a3b8',background:'white',borderTop:'1px solid #f1f5f9',flexShrink:0}}>
-        S = Sáng (4h) · C = Chiều (4h) · Việc Chính tự tính = (S+C) − Việc Phụ · Click tên cột Việc Phụ để đổi · + thêm cột
+        S = Sáng (4h) · C = Chiều (4h) · Việc Chính tự tính = (S+C) − Phụ · 💾 Lưu hoặc tự lưu sau 0.8s · Click tên cột để đổi
       </div>
     </div>
   )
