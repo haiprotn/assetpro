@@ -36,6 +36,28 @@ def _safe_hours(h) -> dict:
     return dict(h)
 
 
+def _fmt_notes(notes) -> str:
+    """
+    Nếu notes là JSON ghi chú theo ngày {"1":"thử","3":"họp"}
+    → trả về text dễ đọc "Ngày 1: thử | Ngày 3: họp".
+    Ngược lại trả về chuỗi gốc.
+    """
+    if not notes:
+        return ""
+    if isinstance(notes, str) and notes.startswith("{"):
+        try:
+            obj = json.loads(notes)
+            if isinstance(obj, dict):
+                parts = [
+                    f"Ngày {k}: {v}"
+                    for k, v in sorted(obj.items(), key=lambda x: int(x[0]))
+                ]
+                return " | ".join(parts)
+        except Exception:
+            pass
+    return str(notes)
+
+
 # ─────────────────────────────────────────────────────────────
 # List rows for a month
 # ─────────────────────────────────────────────────────────────
@@ -309,7 +331,7 @@ async def export_excel(
         dc(data_row, base + 2, round(total_hours, 1)    or "", fill=sub_fill, bold=True)
         dc(data_row, base + 3, work_days                or "", fill=sub_fill, bold=True)
         dc(data_row, base + 4, ot_over2h                or "", fill=sub_fill, bold=True)
-        dc(data_row, base + 5, row.get("notes") or "", fill=bg, align="left")
+        dc(data_row, base + 5, _fmt_notes(row.get("notes")), fill=bg, align="left")
 
         ws.row_dimensions[data_row].height = 16
         data_row += 1
