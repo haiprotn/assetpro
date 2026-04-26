@@ -97,11 +97,12 @@ export default function TimesheetPage() {
     queryFn: () => attendanceApi.listWorkLogs({ year, month }).then(r => r.data),
   })
 
-  const { data: reportData, isLoading: loadReport } = useQuery({
+  const { data: reportData, isLoading: loadReport, isError: reportError, error: reportErr } = useQuery({
     queryKey: ['att-report', year, month, deptId],
     queryFn: () => attendanceApi.report({ year, month, ...(deptId ? { dept_id: deptId } : {}) })
       .then(r => r.data),
     enabled: tab === 'report',
+    retry: 1,
   })
 
   // ── build attendance map ───────────────────────────────────────────────────
@@ -310,6 +311,9 @@ export default function TimesheetPage() {
           {tab === 'report' && (
             <ReportMatrix
               reportData={reportData}
+              isLoading={loadReport}
+              isError={reportError}
+              errorMsg={reportErr?.response?.data?.detail || reportErr?.message}
               year={year}
               month={month}
             />
@@ -885,14 +889,42 @@ function WorkLogPanel({ person, year, month, days, workLogs, locations, getAtt, 
 
 // ─── ReportMatrix ─────────────────────────────────────────────────────────────
 
-function ReportMatrix({ reportData, year, month }) {
+function ReportMatrix({ reportData, isLoading, isError, errorMsg, year, month }) {
   const [locFilter, setLocFilter] = useState('')
 
-  if (!reportData) return (
+  if (isLoading) return (
     <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'#94a3b8' }}>
-      Đang tải báo cáo...
+      <div style={{ textAlign:'center' }}>
+        <div style={{ fontSize:24, marginBottom:8 }}>⏳</div>
+        <div>Đang tải báo cáo tháng {month}/{year}...</div>
+      </div>
     </div>
   )
+
+  if (isError) return (
+    <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <div style={{
+        textAlign:'center', padding:'32px 40px', borderRadius:14,
+        background:'#fff5f5', border:'1px solid #fecaca', maxWidth:480,
+      }}>
+        <div style={{ fontSize:32, marginBottom:10 }}>⚠️</div>
+        <div style={{ fontWeight:700, fontSize:15, color:'#dc2626', marginBottom:8 }}>
+          Không thể tải báo cáo
+        </div>
+        <div style={{ fontSize:12, color:'#64748b', lineHeight:1.6 }}>
+          {errorMsg || 'Lỗi kết nối API'}
+        </div>
+        <div style={{ marginTop:12, fontSize:11, color:'#94a3b8' }}>
+          Kiểm tra migration đã chạy chưa:<br/>
+          <code style={{ background:'#f1f5f9', padding:'2px 6px', borderRadius:4 }}>
+            docker exec -i asset_db psql ... &lt; migrate_attendance.sql
+          </code>
+        </div>
+      </div>
+    </div>
+  )
+
+  if (!reportData) return null
 
   const { employees, locations, num_days } = reportData
   const days = Array.from({ length: num_days }, (_, i) => i + 1)
