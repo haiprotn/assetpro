@@ -109,7 +109,10 @@ export default function TimesheetPage() {
     },
     onError: (err) => {
       setSaveStatus('idle')
-      showToast('❌ Lỗi lưu: ' + (err?.response?.data?.detail || err?.message || 'Lỗi không xác định'))
+      const status  = err?.response?.status
+      const detail  = err?.response?.data?.detail
+      const msg     = status ? `HTTP ${status}: ${detail || err.message}` : (err?.message || 'Network Error')
+      showToast('❌ ' + msg)
     },
   })
 
@@ -136,11 +139,36 @@ export default function TimesheetPage() {
       showToast('Không có thay đổi mới để lưu')
       return
     }
+    // Clean payload — chỉ gửi các field mà backend cần
+    const payload = Object.values(batch).map(row => ({
+      id:               row.id || null,
+      personnel_id:     String(row.personnel_id),
+      year:             Number(row.year),
+      month:            Number(row.month),
+      row_index:        Number(row.row_index),
+      row_label:        row.row_label   || null,
+      work_description: row.work_description || null,
+      hours: Object.fromEntries(
+        Object.entries(row.hours || {})
+          .map(([k, v]) => [k, Number(v)])
+          .filter(([, v]) => !isNaN(v) && v > 0)
+      ),
+      leave_days: Number(row.leave_days) || 0,
+      notes:      row.notes || null,
+    }))
+
     pendingRef.current = {}
-    const payload = Object.values(batch)
     setSaving(true); setSaveStatus('saving')
-    try { await saveMut.mutateAsync(payload) }
-    finally { setSaving(false) }
+    try {
+      await saveMut.mutateAsync(payload)
+    } catch (err) {
+      // Khôi phục để user có thể retry
+      pendingRef.current = batch
+      setDirty(true)
+      console.error('[TimesheetSave] error:', err?.response?.status, err?.response?.data, err?.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   // ── Get merged rows for a person ───────────────────────────────────────────
