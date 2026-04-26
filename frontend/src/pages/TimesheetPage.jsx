@@ -431,6 +431,18 @@ function AttendanceGrid({ person, days, year, month, getAtt, patchAtt, handleTim
       {/* Grid */}
       <div style={{ flex:1, overflowX:'auto', overflowY:'auto' }}>
         <table style={{ borderCollapse:'collapse', minWidth:'100%', fontSize:12 }}>
+          <colgroup>
+            <col style={{ width:50 }} />{/* Ngày */}
+            <col style={{ width:42 }} />{/* Thứ */}
+            <col style={{ width:90 }} />{/* Vào */}
+            <col style={{ width:90 }} />{/* Ra */}
+            <col style={{ width:76 }} />{/* Tổng giờ */}
+            <col style={{ width:72 }} />{/* Trễ */}
+            <col style={{ width:88 }} />{/* Về sớm */}
+            <col style={{ width:66 }} />{/* OT */}
+            <col style={{ width:114 }} />{/* Trạng thái */}
+            <col />{/* Ghi chú */}
+          </colgroup>
           <thead>
             <tr>
               {['Ngày','Thứ','Vào','Ra','Tổng giờ','Trễ (ph)','Về sớm (ph)','OT (h)','Trạng thái','Ghi chú'].map(h => (
@@ -453,16 +465,16 @@ function AttendanceGrid({ person, days, year, month, getAtt, patchAtt, handleTim
                             : 'white'
               return (
                 <tr key={d} style={{ background: rowBg }}>
-                  <td style={{ ...ATD, fontWeight:700, width:36, textAlign:'center',
+                  <td style={{ ...ATD, fontWeight:700, textAlign:'center',
                                 color: isWknd ? '#d97706' : '#1e293b' }}>
                     {d}
                   </td>
-                  <td style={{ ...ATD, width:30, textAlign:'center', fontSize:10,
+                  <td style={{ ...ATD, textAlign:'center', fontSize:11,
                                 color: isWknd ? '#d97706' : '#64748b' }}>
                     {DOW_SHORT[dow]}
                   </td>
                   {/* Check-in */}
-                  <td style={{ ...ATD, width:72 }}>
+                  <td style={ATD}>
                     <input
                       type="time"
                       value={rec.check_in  || ''}
@@ -471,7 +483,7 @@ function AttendanceGrid({ person, days, year, month, getAtt, patchAtt, handleTim
                     />
                   </td>
                   {/* Check-out */}
-                  <td style={{ ...ATD, width:72 }}>
+                  <td style={ATD}>
                     <input
                       type="time"
                       value={rec.check_out || ''}
@@ -1100,11 +1112,11 @@ const ATD = {
 }
 
 const TINP = {
-  width:72, border:'none', background:'transparent',
-  fontSize:11, outline:'none', padding:'1px 2px',
+  width:'100%', border:'none', background:'transparent',
+  fontSize:12, outline:'none', padding:'2px 4px', boxSizing:'border-box',
 }
 
 const NINP = {
-  width:54, border:'none', background:'transparent',
-  textAlign:'center', fontSize:11, outline:'none', padding:'1px 2px',
+  width:'100%', border:'none', background:'transparent',
+  textAlign:'center', fontSize:12, outline:'none', padding:'2px 4px', boxSizing:'border-box',
 }
