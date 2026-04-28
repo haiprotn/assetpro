@@ -852,41 +852,57 @@ function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchR
 
 function ReportTab({ rows, personnel, depts, days, numDays, year, month, isLoading }) {
   if (isLoading) return <Empty text="Đang tải..." />
-  if (!rows.length && !personnel.length) return <Empty text="Không có dữ liệu" />
 
-  // Dept lookup map: id → name
+  // Dept lookup: id → name
   const deptMap = Object.fromEntries((depts || []).map(d => [String(d.id), d.name]))
 
-  // Dept from rows (join gives department_name)
-  const pidDeptFromRows = {}
-  for (const r of rows) {
-    if (r.department_name) pidDeptFromRows[String(r.personnel_id)] = r.department_name
-  }
-
-  function getDeptName(p) {
-    const pid = String(p.id)
-    return pidDeptFromRows[pid]
-        || deptMap[String(p.department_id)]
-        || p.department_name
-        || ''
-  }
-
-  // Build map: pid → { day → totalHours (summed across all rows) }
-  const pidDayMap = {}
+  // ── Build pidDayMap & pidSummary từ rows ────────────────────────────────
+  const pidDayMap  = {}
   const pidSummary = {}
+  // Đồng thời thu thập thông tin nhân viên từ rows (có JOIN đầy đủ)
+  const pidInfoFromRows = {}
+
   for (const r of rows) {
     const pid = String(r.personnel_id)
     if (!pidDayMap[pid]) pidDayMap[pid] = {}
+    if (!pidInfoFromRows[pid]) {
+      pidInfoFromRows[pid] = {
+        id:              r.personnel_id,
+        full_name:       r.full_name       || '',
+        employee_code:   r.employee_code   || '',
+        department_name: r.department_name || deptMap[String(r.department_id)] || '',
+        position:        r.position_text   || '',
+        department_id:   r.department_id,
+      }
+    }
     for (let d = 1; d <= numDays; d++) {
       const h = parseFloat((r.hours||{})[String(d)]||0)
       if (h > 0) pidDayMap[pid][d] = (pidDayMap[pid][d]||0) + h
     }
-    // leave days: take from row_index 0 only
     if (r.row_index === 0) {
       pidSummary[pid] = pidSummary[pid] || { leave: 0 }
       pidSummary[pid].leave += parseFloat(r.leave_days||0)
     }
   }
+
+  // ── Merge danh sách nhân viên ────────────────────────────────────────────
+  // Ưu tiên: nhân viên có data (từ rows) + nhân viên không có data (từ filteredP)
+  const seenPids   = new Set(Object.keys(pidInfoFromRows))
+  const allFromP   = (personnel || []).map(p => ({
+    id:              p.id,
+    full_name:       p.full_name       || '',
+    employee_code:   p.employee_code   || '',
+    department_name: deptMap[String(p.department_id)] || p.department_name || '',
+    position:        p.position        || '',
+    department_id:   p.department_id,
+  }))
+  // Nhân viên có data hiện trước, sau đó nhân viên không có data
+  const withData    = Object.values(pidInfoFromRows)
+    .sort((a,b) => a.full_name.localeCompare(b.full_name, 'vi'))
+  const withoutData = allFromP.filter(p => !seenPids.has(String(p.id)))
+  const displayList = [...withData, ...withoutData]
+
+  if (!displayList.length) return <Empty text="Không có dữ liệu" />
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
@@ -894,7 +910,12 @@ function ReportTab({ rows, personnel, depts, days, numDays, year, month, isLoadi
         padding:'8px 16px', background:'white', borderBottom:'1px solid #e2e8f0',
         fontSize:13, fontWeight:700, color:'#1a2744', flexShrink:0,
       }}>
-        Báo cáo tháng {month}/{year} — {personnel.length} nhân viên
+        Báo cáo tháng {month}/{year} — {withData.length} nhân viên có dữ liệu
+        {withoutData.length > 0 && (
+          <span style={{ fontWeight:400, color:'#94a3b8', marginLeft:8, fontSize:12 }}>
+            + {withoutData.length} chưa có
+          </span>
+        )}
       </div>
       <div style={{ flex:1, overflow:'auto' }}>
         <table style={{ borderCollapse:'collapse', fontSize:11, minWidth:'100%' }}>
@@ -921,10 +942,11 @@ function ReportTab({ rows, personnel, depts, days, numDays, year, month, isLoadi
             </tr>
           </thead>
           <tbody>
-            {personnel.map((p, gi) => {
-              const pid  = String(p.id)
-              const dmap = pidDayMap[pid] || {}
-              const bg   = gi%2===1 ? '#f8fafc' : 'white'
+            {displayList.map((p, gi) => {
+              const pid     = String(p.id)
+              const dmap    = pidDayMap[pid] || {}
+              const hasData = Object.keys(dmap).length > 0
+              const bg      = gi%2===1 ? '#f8fafc' : 'white'
 
               const totalH   = +Object.values(dmap).reduce((s,h)=>s+h,0).toFixed(1)
               const workDays = Object.keys(dmap).length
@@ -932,11 +954,11 @@ function ReportTab({ rows, personnel, depts, days, numDays, year, month, isLoadi
               const leave    = pidSummary[pid]?.leave || 0
 
               return (
-                <tr key={pid} style={{ background: bg }}>
+                <tr key={pid} style={{ background: bg, opacity: hasData ? 1 : 0.45 }}>
                   <td style={{ ...TD, textAlign:'center', fontWeight:700, color:'#64748b',
                                 position:'sticky', left:0, background:bg }}>{gi+1}</td>
                   <td style={{ ...TD, position:'sticky', left:32, background:bg,
-                                fontWeight:700, paddingLeft:8, whiteSpace:'nowrap' }}>
+                                fontWeight: hasData ? 700 : 400, paddingLeft:8, whiteSpace:'nowrap' }}>
                     {p.full_name}
                     {p.employee_code && (
                       <div style={{ fontSize:9, color:'#94a3b8', fontWeight:400 }}>{p.employee_code}</div>
@@ -945,7 +967,7 @@ function ReportTab({ rows, personnel, depts, days, numDays, year, month, isLoadi
                   <td style={{ ...TD, position:'sticky', left:182, background:bg,
                                 fontSize:10, color:'#64748b', maxWidth:90, overflow:'hidden',
                                 textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                    {getDeptName(p)}
+                    {p.department_name}
                   </td>
                   {days.map(d => {
                     const h   = dmap[d]
