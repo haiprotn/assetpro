@@ -35,6 +35,8 @@ class Department(Base):
     code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     department_type: Mapped[Optional[str]] = mapped_column(String(50))
+    address:         Mapped[Optional[str]] = mapped_column(Text)
+    province:        Mapped[Optional[str]] = mapped_column(String(100))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

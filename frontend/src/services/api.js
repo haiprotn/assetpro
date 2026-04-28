@@ -197,7 +197,7 @@ export const attendanceApi = {
   // Attendance records
   list:   (params)          => api.get('/attendance', { params }),
   upsert: (pid, date, data) => api.put(`/attendance/${pid}/${date}`, data),
-  // Work logs (liên kết locations)
+  // Work logs (liên kết departments — phòng ban = bộ phận)
   listWorkLogs:  (params)   => api.get('/attendance/work-logs', { params }),
   createWorkLog: (data)     => api.post('/attendance/work-logs', data),
   updateWorkLog: (id, data) => api.put(`/attendance/work-logs/${id}`, data),

@@ -18,20 +18,25 @@ def _to_code(name: str) -> str:
 
 
 class DeptCreate(BaseModel):
-    name: str
-    code: Optional[str] = None
+    name:            str
+    code:            Optional[str] = None
     department_type: Optional[str] = "ADMIN"
+    address:         Optional[str] = None
+    province:        Optional[str] = None
 
 
 class DeptUpdate(BaseModel):
-    name: Optional[str] = None
+    name:            Optional[str] = None
     department_type: Optional[str] = None
+    address:         Optional[str] = None
+    province:        Optional[str] = None
 
 
 @router.get("")
 async def list_departments(db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user)):
     rows = (await db.execute(text("""
-        SELECT d.id, d.code, d.name, d.department_type, d.is_active,
+        SELECT d.id, d.code, d.name, d.department_type,
+               d.address, d.province, d.is_active,
                COUNT(a.id) AS asset_count
         FROM departments d
         LEFT JOIN assets a ON a.managing_department_id = d.id AND a.is_active = TRUE
@@ -52,12 +57,14 @@ async def create_department(
     if exists:
         raise HTTPException(400, f"Mã phòng ban '{code}' đã tồn tại")
     dept = Department(id=uuid.uuid4(), code=code, name=data.name.strip(),
-                      department_type=data.department_type or 'ADMIN')
+                      department_type=data.department_type or 'ADMIN',
+                      address=data.address, province=data.province)
     db.add(dept)
     await db.commit()
     await db.refresh(dept)
     return {"id": str(dept.id), "code": dept.code, "name": dept.name,
-            "department_type": dept.department_type, "asset_count": 0}
+            "department_type": dept.department_type,
+            "address": dept.address, "province": dept.province, "asset_count": 0}
 
 
 @router.put("/{dept_id}")
@@ -70,14 +77,15 @@ async def update_department(
     dept = (await db.execute(select(Department).where(Department.id == dept_id))).scalar_one_or_none()
     if not dept:
         raise HTTPException(404, "Không tìm thấy phòng ban")
-    if data.name:
-        dept.name = data.name.strip()
-    if data.department_type:
-        dept.department_type = data.department_type
+    if data.name:            dept.name            = data.name.strip()
+    if data.department_type: dept.department_type  = data.department_type
+    if data.address  is not None: dept.address  = data.address  or None
+    if data.province is not None: dept.province = data.province or None
     await db.commit()
     await db.refresh(dept)
     return {"id": str(dept.id), "code": dept.code, "name": dept.name,
-            "department_type": dept.department_type}
+            "department_type": dept.department_type,
+            "address": dept.address, "province": dept.province}
 
 
 @router.delete("/{dept_id}")

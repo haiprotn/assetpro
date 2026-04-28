@@ -24,19 +24,19 @@ CREATE TABLE IF NOT EXISTS attendances (
 CREATE INDEX IF NOT EXISTS idx_att_date      ON attendances(date);
 CREATE INDEX IF NOT EXISTS idx_att_personnel ON attendances(personnel_id);
 
--- 2. Phân bổ giờ làm theo vị trí / công trình (dùng bảng locations có sẵn)
+-- 2. Phân bổ giờ làm theo phòng ban / bộ phận
 CREATE TABLE IF NOT EXISTS work_logs (
-    id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    personnel_id UUID         NOT NULL REFERENCES personnel(id)  ON DELETE CASCADE,
-    date         DATE         NOT NULL,
-    location_id  UUID         NOT NULL REFERENCES locations(id)  ON DELETE CASCADE,
-    task_type    VARCHAR(10)  NOT NULL DEFAULT 'main',            -- main / sub
-    hours        NUMERIC(4,2) NOT NULL,
-    notes        TEXT,
-    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    personnel_id  UUID         NOT NULL REFERENCES personnel(id)   ON DELETE CASCADE,
+    date          DATE         NOT NULL,
+    department_id UUID         NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+    task_type     VARCHAR(10)  NOT NULL DEFAULT 'main',             -- main / sub
+    hours         NUMERIC(4,2) NOT NULL,
+    notes         TEXT,
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_wl_date      ON work_logs(date);
-CREATE INDEX IF NOT EXISTS idx_wl_personnel ON work_logs(personnel_id);
-CREATE INDEX IF NOT EXISTS idx_wl_location  ON work_logs(location_id);
+CREATE INDEX IF NOT EXISTS idx_wl_date       ON work_logs(date);
+CREATE INDEX IF NOT EXISTS idx_wl_personnel  ON work_logs(personnel_id);
+CREATE INDEX IF NOT EXISTS idx_wl_department ON work_logs(department_id);

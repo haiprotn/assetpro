@@ -38,24 +38,24 @@ class AttendanceOut(BaseModel):
 
 
 class WorkLogIn(BaseModel):
-    personnel_id: UUID
-    date: date
-    location_id: UUID
-    task_type: str = "main"                 # main / sub
-    hours: float
-    notes: Optional[str] = None
+    personnel_id:  UUID
+    date:          date
+    department_id: UUID
+    task_type:     str = "main"             # main / sub
+    hours:         float
+    notes:         Optional[str] = None
 
 
 class WorkLogOut(BaseModel):
-    id: UUID
-    personnel_id: UUID
-    date: date
-    location_id: UUID
-    location_name: Optional[str] = None
-    location_code: Optional[str] = None
-    task_type: str
-    hours: float
-    notes: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
+    id:              UUID
+    personnel_id:    UUID
+    date:            date
+    department_id:   UUID
+    department_name: Optional[str] = None
+    department_code: Optional[str] = None
+    task_type:       str
+    hours:           float
+    notes:           Optional[str] = None
+    created_at:      datetime
+    updated_at:      datetime
     model_config = {"from_attributes": True}

@@ -19,22 +19,34 @@ const DEPT_TYPES = [
   { value: 'OPERATIONS', label: 'Vận hành' },
 ]
 
+const inp = { width:'100%', padding:'9px 12px', borderRadius:7, border:'1px solid #e2e8f0', fontSize:13, boxSizing:'border-box' }
+const lbl = { fontSize:12, fontWeight:600, color:'#475569', display:'block', marginBottom:5 }
+
 function DeptModal({ dept, onClose, onSave }) {
-  const [name, setName] = useState(dept?.name || '')
-  const [code, setCode] = useState(dept?.code || '')
-  const [type, setType] = useState(dept?.department_type || 'ADMIN')
+  const [form, setForm] = useState({
+    name:            dept?.name            || '',
+    code:            dept?.code            || '',
+    department_type: dept?.department_type || 'ADMIN',
+    province:        dept?.province        || '',
+    address:         dept?.address         || '',
+  })
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
+  const [error,  setError]  = useState('')
 
   const submit = async () => {
-    if (!name.trim()) { setError('Vui lòng nhập tên phòng ban'); return }
+    if (!form.name.trim()) { setError('Vui lòng nhập tên phòng ban'); return }
     setSaving(true); setError('')
     try {
+      const payload = {
+        name: form.name, department_type: form.department_type,
+        province: form.province || null, address: form.address || null,
+      }
       if (dept?.id) {
-        const r = await api.put(`/departments/${dept.id}`, { name, department_type: type })
+        const r = await api.put(`/departments/${dept.id}`, payload)
         onSave(r.data)
       } else {
-        const r = await api.post('/departments', { name, code: code || undefined, department_type: type })
+        const r = await api.post('/departments', { ...payload, code: form.code || undefined })
         onSave(r.data)
       }
     } catch (e) {
@@ -44,43 +56,62 @@ function DeptModal({ dept, onClose, onSave }) {
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+      position:'fixed', inset:0, background:'rgba(0,0,0,0.5)',
+      display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000,
     }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div style={{ background: 'white', borderRadius: 14, width: 440, padding: 28 }}>
-        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 20 }}>
+      <div style={{ background:'white', borderRadius:14, width:480, padding:28 }}>
+        <div style={{ fontWeight:800, fontSize:17, marginBottom:20 }}>
           {dept ? '✏️ Sửa phòng ban' : '➕ Thêm phòng ban'}
         </div>
-        <div style={{ marginBottom: 14 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 5 }}>Tên phòng ban *</label>
-          <input value={name} onChange={e => setName(e.target.value)}
-            style={{ width: '100%', padding: '9px 12px', borderRadius: 7, border: '1px solid #e2e8f0', fontSize: 13, boxSizing: 'border-box' }}
-            placeholder="VD: PHÒNG KỸ THUẬT" />
-        </div>
-        {!dept && (
-          <div style={{ marginBottom: 14 }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 5 }}>Mã phòng ban (tự động nếu để trống)</label>
-            <input value={code} onChange={e => setCode(e.target.value.toUpperCase())}
-              style={{ width: '100%', padding: '9px 12px', borderRadius: 7, border: '1px solid #e2e8f0', fontSize: 13, boxSizing: 'border-box' }}
-              placeholder="VD: KY_THUAT" />
+
+        {/* Tên + Mã */}
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 140px', gap:12, marginBottom:14 }}>
+          <div>
+            <label style={lbl}>Tên phòng ban *</label>
+            <input value={form.name} onChange={e => set('name', e.target.value)}
+              style={inp} placeholder="VD: BỘ PHẬN KỸ THUẬT" />
           </div>
-        )}
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 5 }}>Loại phòng ban</label>
-          <select value={type} onChange={e => setType(e.target.value)}
-            style={{ width: '100%', padding: '9px 12px', borderRadius: 7, border: '1px solid #e2e8f0', fontSize: 13, background: 'white' }}>
-            {DEPT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </select>
+          <div>
+            <label style={lbl}>{dept ? 'Mã' : 'Mã (tự động)'}</label>
+            <input value={form.code} onChange={e => set('code', e.target.value.toUpperCase())}
+              disabled={!!dept}
+              style={{ ...inp, background: dept ? '#f8fafc' : 'white' }}
+              placeholder="KY_THUAT" />
+          </div>
         </div>
-        {error && <div style={{ color: '#b91c1c', fontSize: 12, marginBottom: 12, background: '#fef2f2', padding: '8px 10px', borderRadius: 6 }}>{error}</div>}
-        <div style={{ display: 'flex', gap: 8 }}>
+
+        {/* Loại + Tỉnh */}
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:14 }}>
+          <div>
+            <label style={lbl}>Loại phòng ban</label>
+            <select value={form.department_type} onChange={e => set('department_type', e.target.value)}
+              style={{ ...inp, background:'white' }}>
+              {DEPT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>Tỉnh / Thành phố</label>
+            <input value={form.province} onChange={e => set('province', e.target.value)}
+              style={inp} placeholder="VD: TP. Hồ Chí Minh" />
+          </div>
+        </div>
+
+        {/* Địa chỉ */}
+        <div style={{ marginBottom:20 }}>
+          <label style={lbl}>Địa chỉ</label>
+          <input value={form.address} onChange={e => set('address', e.target.value)}
+            style={inp} placeholder="Số nhà, đường, phường..." />
+        </div>
+
+        {error && <div style={{ color:'#b91c1c', fontSize:12, marginBottom:12, background:'#fef2f2', padding:'8px 10px', borderRadius:6 }}>{error}</div>}
+        <div style={{ display:'flex', gap:8 }}>
           <button onClick={submit} disabled={saving} style={{
-            padding: '9px 22px', background: '#1a2744', color: 'white',
-            border: 'none', borderRadius: 7, cursor: 'pointer', fontWeight: 700, fontSize: 13,
+            padding:'9px 22px', background:'#1a2744', color:'white',
+            border:'none', borderRadius:7, cursor:'pointer', fontWeight:700, fontSize:13,
           }}>{saving ? '⏳ Đang lưu...' : '💾 Lưu'}</button>
           <button onClick={onClose} style={{
-            padding: '9px 16px', background: '#f1f5f9', border: 'none',
-            borderRadius: 7, cursor: 'pointer', fontSize: 13,
+            padding:'9px 16px', background:'#f1f5f9', border:'none',
+            borderRadius:7, cursor:'pointer', fontSize:13,
           }}>Huỷ</button>
         </div>
       </div>

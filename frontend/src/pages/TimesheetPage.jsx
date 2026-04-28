@@ -5,7 +5,7 @@
  */
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { timesheetApi, personnelApi, deptApi } from '../services/api'
+import { timesheetApi, personnelApi, deptApi, attendanceApi } from '../services/api'
 import { useAuthStore } from '../store/authStore'
 
 // ─── constants ───────────────────────────────────────────────────────────────

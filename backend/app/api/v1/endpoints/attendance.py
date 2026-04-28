@@ -123,7 +123,7 @@ async def upsert_attendance(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Work logs (phân bổ giờ theo vị trí / công trình)
+# Work logs (phân bổ giờ theo phòng ban / bộ phận)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/work-logs", response_model=list[WorkLogOut])
@@ -131,7 +131,7 @@ async def list_work_logs(
     year:         int           = Query(...),
     month:        int           = Query(...),
     personnel_id: Optional[str] = Query(None),
-    location_id:  Optional[str] = Query(None),
+    department_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _user=Depends(get_current_user),
 ):
@@ -144,16 +144,16 @@ async def list_work_logs(
     if personnel_id:
         extra += " AND wl.personnel_id = :personnel_id::uuid"
         params["personnel_id"] = personnel_id
-    if location_id:
-        extra += " AND wl.location_id = :location_id::uuid"
-        params["location_id"] = location_id
+    if department_id:
+        extra += " AND wl.department_id = :department_id::uuid"
+        params["department_id"] = department_id
 
     r = await db.execute(text(f"""
         SELECT wl.*,
-               loc.name AS location_name,
-               loc.code AS location_code
+               d.name AS department_name,
+               d.code AS department_code
         FROM work_logs wl
-        JOIN locations loc ON loc.id = wl.location_id
+        JOIN departments d ON d.id = wl.department_id
         WHERE wl.date >= :date_from AND wl.date <= :date_to {extra}
         ORDER BY wl.date, wl.personnel_id, loc.name
     """), params)
@@ -173,13 +173,13 @@ async def create_work_log(
     _user=Depends(get_current_user),
 ):
     r = await db.execute(text("""
-        INSERT INTO work_logs (id, personnel_id, date, location_id, task_type, hours, notes)
-        VALUES (gen_random_uuid(), :pid, :date, :location_id, :task_type, :hours, :notes)
+        INSERT INTO work_logs (id, personnel_id, date, department_id, task_type, hours, notes)
+        VALUES (gen_random_uuid(), :pid, :date, :department_id, :task_type, :hours, :notes)
         RETURNING id
     """), {
         "pid":         str(body.personnel_id),
         "date":        body.date,
-        "location_id": str(body.location_id),
+        "department_id": str(body.department_id),
         "task_type":   body.task_type,
         "hours":       body.hours,
         "notes":       body.notes,
@@ -188,9 +188,9 @@ async def create_work_log(
     await db.commit()
 
     r2 = await db.execute(text("""
-        SELECT wl.*, loc.name AS location_name, loc.code AS location_code
+        SELECT wl.*, d.name AS department_name, d.code AS department_code
         FROM work_logs wl
-        JOIN locations loc ON loc.id = wl.location_id
+        JOIN departments d ON d.id = wl.department_id
         WHERE wl.id = :id
     """), {"id": str(new_id)})
     rec = dict(r2.fetchone()._mapping)
@@ -207,11 +207,11 @@ async def update_work_log(
 ):
     r = await db.execute(text("""
         UPDATE work_logs
-        SET location_id=:location_id, task_type=:task_type,
+        SET department_id=:department_id, task_type=:task_type,
             hours=:hours, notes=:notes, updated_at=NOW()
         WHERE id=:id RETURNING id
     """), {
-        "location_id": str(body.location_id),
+        "department_id": str(body.department_id),
         "task_type":   body.task_type,
         "hours":       body.hours,
         "notes":       body.notes,
@@ -222,9 +222,9 @@ async def update_work_log(
     await db.commit()
 
     r2 = await db.execute(text("""
-        SELECT wl.*, loc.name AS location_name, loc.code AS location_code
+        SELECT wl.*, d.name AS department_name, d.code AS department_code
         FROM work_logs wl
-        JOIN locations loc ON loc.id = wl.location_id
+        JOIN departments d ON d.id = wl.department_id
         WHERE wl.id = :id
     """), {"id": str(log_id)})
     rec = dict(r2.fetchone()._mapping)
@@ -301,30 +301,25 @@ async def get_report(
     """), params_dept)
     all_p = [dict(r._mapping) for r in p_r.fetchall()]
 
-    # work logs  — group by pid → location_id
+    # work logs  — group by pid → department_id
     wl_r = await db.execute(text("""
-        SELECT wl.personnel_id, wl.location_id, wl.hours,
-               loc.name AS location_name, loc.code AS location_code
+        SELECT wl.personnel_id, wl.department_id, wl.hours,
+               d.name AS department_name, d.code AS department_code
         FROM work_logs wl
-        JOIN locations loc ON loc.id = wl.location_id
+        JOIN departments d ON d.id = wl.department_id
         WHERE wl.date >= :df AND wl.date <= :dt
     """), {"df": date_from, "dt": date_to})
     wl_map: dict = {}
     for row in wl_r.fetchall():
         rec   = dict(row._mapping)
         pid   = str(rec["personnel_id"])
-        locid = str(rec["location_id"])
-        wl_map.setdefault(pid, {}).setdefault(locid, {
-            "hours": 0, "name": rec["location_name"], "code": rec["location_code"],
+        dept_id = str(rec["department_id"])
+        wl_map.setdefault(pid, {}).setdefault(dept_id, {
+            "hours": 0, "name": rec["department_name"], "code": rec["department_code"],
         })
-        wl_map[pid][locid]["hours"] += float(rec.get("hours") or 0)
+        wl_map[pid][dept_id]["hours"] += float(rec.get("hours") or 0)
 
-    # locations list (for filter dropdown)
-    loc_r = await db.execute(text(
-        "SELECT id, code, name FROM locations WHERE is_active=TRUE ORDER BY name"
-    ))
-    locations = [{"id": str(r.id), "code": r.code, "name": r.name}
-                 for r in loc_r.fetchall()]
+
 
     employees = []
     for p in all_p:
@@ -354,7 +349,7 @@ async def get_report(
 
     return {
         "year": year, "month": month, "num_days": num_days,
-        "employees": employees, "locations": locations,
+        "employees": employees, 
     }
 
 
