@@ -205,8 +205,9 @@ class PersonnelBase(BaseModel):
 
     # Công việc
     department_id: Optional[UUID] = None
-    position_id: Optional[UUID] = None
-    job_title_id: Optional[UUID] = None
+    position_id:   Optional[UUID] = None
+    job_title_id:  Optional[UUID] = None
+    position:      Optional[str]  = None   # chức vụ text (tương thích cũ)
     job_status: Optional[str] = Field(None, description="PROBATION / OFFICIAL / RESIGNED / TERMINATED")
     job_date_join: Optional[date] = None
     job_date_try: Optional[date] = None

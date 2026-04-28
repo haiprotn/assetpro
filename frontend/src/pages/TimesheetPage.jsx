@@ -90,7 +90,16 @@ export default function TimesheetPage() {
     byPid[pid].push(r)
   }
 
-  const filteredP = allPersonnel.filter(p => {
+  // Lookup map: department_id → {name, code}
+  const deptMap = Object.fromEntries(depts.map(d => [String(d.id), d]))
+
+  // Enrich allPersonnel với department_name (không có trong /personnel/all response)
+  const enrichedPersonnel = allPersonnel.map(p => ({
+    ...p,
+    department_name: deptMap[String(p.department_id)]?.name || p.department_name || '',
+  }))
+
+  const filteredP = enrichedPersonnel.filter(p => {
     if (p.is_active === false) return false
     if (deptId && String(p.department_id) !== deptId) return false
     if (search && !p.full_name?.toLowerCase().includes(search.toLowerCase()) &&
@@ -371,8 +380,16 @@ export default function TimesheetPage() {
                     <div style={{ fontWeight: act ? 700 : 500, fontSize:12.5, color:'#1e293b' }}>
                       {p.full_name}
                     </div>
+                    {/* Mã nhân viên */}
                     {p.employee_code && (
                       <div style={{ fontSize:10, color:'#94a3b8' }}>{p.employee_code}</div>
+                    )}
+                    {/* Phòng ban + chức vụ */}
+                    {(p.department_name || p.position) && (
+                      <div style={{ fontSize:10, color:'#64748b', marginTop:1,
+                                    overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {[p.position, p.department_name].filter(Boolean).join(' · ')}
+                      </div>
                     )}
                     <div style={{ display:'flex', gap:4, marginTop:3 }}>
                       {summ.workDays > 0 && <Chip c="#2563eb" bg="#dbeafe">{summ.workDays}N</Chip>}
