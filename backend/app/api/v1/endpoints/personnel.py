@@ -221,11 +221,10 @@ async def list_personnel_all(
     db=Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    # isnot(False) = lấy cả is_active=True lẫn is_active=NULL (chưa set)
-    # chỉ bỏ qua nhân viên bị đánh dấu vô hiệu hoá rõ ràng (is_active=False)
+    # Trả về TẤT CẢ nhân viên, không lọc is_active
+    # Frontend sẽ tự lọc theo nhu cầu (chấm công giữ lại tất cả trừ is_active=False)
     result = await db.execute(
         select(Personnel)
-        .where(Personnel.is_active.isnot(False))
         .order_by(Personnel.full_name)
     )
     return result.scalars().all()
