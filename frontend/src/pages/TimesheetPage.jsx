@@ -325,12 +325,28 @@ export default function TimesheetPage() {
         {/* Tabs */}
         <div style={{ display:'flex', gap:2, marginLeft:4 }}>
           {[{k:'input',l:'📋 Nhập liệu'},{k:'report',l:'📊 Báo cáo'}].map(t => (
-            <button key={t.k} onClick={() => setTab(t.k)} style={{
+            <button key={t.k} onClick={async () => {
+              // Auto-save trước khi xem báo cáo
+              if (t.k === 'report' && Object.keys(pendingRef.current).length > 0) {
+                await flushSave()
+              }
+              setTab(t.k)
+            }} style={{
               padding:'5px 12px', borderRadius:7, border:'none', cursor:'pointer',
               fontSize:12, fontWeight:600,
+              position:'relative',
               background: tab===t.k ? '#1a2744' : '#f1f5f9',
               color:      tab===t.k ? 'white'   : '#475569',
-            }}>{t.l}</button>
+            }}>
+              {t.l}
+              {t.k === 'report' && dirty && (
+                <span style={{
+                  position:'absolute', top:2, right:2,
+                  width:7, height:7, borderRadius:'50%',
+                  background:'#f59e0b', border:'1.5px solid white',
+                }}/>
+              )}
+            </button>
           ))}
         </div>
 
@@ -902,7 +918,15 @@ function ReportTab({ rows, personnel, depts, days, numDays, year, month, isLoadi
   const withoutData = allFromP.filter(p => !seenPids.has(String(p.id)))
   const displayList = [...withData, ...withoutData]
 
-  if (!displayList.length) return <Empty text="Không có dữ liệu" />
+  if (!displayList.length) return (
+    <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <div style={{ textAlign:'center', color:'#94a3b8' }}>
+        <div style={{ fontSize:32, marginBottom:8 }}>📋</div>
+        <div style={{ fontWeight:600 }}>Chưa có dữ liệu chấm công tháng này</div>
+        <div style={{ fontSize:12, marginTop:4 }}>Nhập liệu ở tab "Nhập liệu" và nhấn 💾 Lưu trước khi xem báo cáo</div>
+      </div>
+    </div>
+  )
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
