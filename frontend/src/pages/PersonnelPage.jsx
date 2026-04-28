@@ -69,6 +69,13 @@ export default function PersonnelPage() {
     queryFn: () => import('../services/api').then(m => m.departmentApi.list().then(r => r.data)),
   })
 
+  const { data: positions = [] } = useQuery({
+    queryKey: ['positions-list'],
+    queryFn: () => import('../services/api').then(m => m.personnelApi.listPositions().then(r => r.data)),
+  })
+
+  const posMap = Object.fromEntries(positions.map(p => [String(p.id), p.title]))
+
   const deleteMutation = useMutation({
     mutationFn: (id) => personnelApi.delete(id),
     onSuccess: () => {
@@ -268,9 +275,9 @@ export default function PersonnelPage() {
                       {departments.find(d => d.id === p.department_id)?.name || '—'}
                     </span> : '—'}
                   </td>
-                  {/* Vị trí */}
+                  {/* Vị trí — ưu tiên position_id lookup, fallback về p.position text cũ */}
                   <td style={{ padding: '11px 14px', color: '#475569', fontSize: 12 }}>
-                    {p.position || '—'}
+                    {posMap[String(p.position_id)] || p.position || '—'}
                   </td>
                   {/* Liên hệ */}
                   <td style={{ padding: '11px 14px', color: '#475569', fontSize: 12 }}>

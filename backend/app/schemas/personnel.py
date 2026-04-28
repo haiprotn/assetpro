@@ -258,10 +258,11 @@ class PersonnelUpdate(BaseModel):
     home_address: Optional[str] = None
     current_address: Optional[str] = None
     photo_url: Optional[str] = None
-    department_id: Optional[UUID] = None
-    position_id: Optional[UUID] = None
-    job_title_id: Optional[UUID] = None
-    job_status: Optional[str] = None
+    department_id: Optional[UUID]  = None
+    position_id:   Optional[UUID]  = None
+    job_title_id:  Optional[UUID]  = None
+    position:      Optional[str]   = None   # text đồng bộ từ position_id
+    job_status:    Optional[str]   = None
     job_date_join: Optional[date] = None
     job_date_try: Optional[date] = None
     job_reldate_join: Optional[date] = None

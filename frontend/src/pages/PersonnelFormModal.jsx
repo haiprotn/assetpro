@@ -103,7 +103,7 @@ const EMPTY_FORM = {
   phone: '', mobile: '', email: '',
   home_address: '', current_address: '',
   department_id: '', position_id: '', job_title_id: '',
-  job_status: '', job_date_join: '', job_date_try: '', job_reldate_join: '',
+  job_status: 'OFFICIAL', job_date_join: '', job_date_try: '', job_reldate_join: '',
   job_date_out: '', job_out_reason: '',
   education_level: '', professional_level: '', training_school: '', work_history: '',
   tax_code: '', social_insurance_number: '', labor_contract_number: '',
@@ -134,7 +134,7 @@ function toFormValues(item) {
     department_id: item.department_id || '',
     position_id: item.position_id || '',
     job_title_id: item.job_title_id || '',
-    job_status: item.job_status || '',
+    job_status: item.job_status || 'OFFICIAL',
     job_date_join: dateStr(item.job_date_join),
     job_date_try: dateStr(item.job_date_try),
     job_reldate_join: dateStr(item.job_reldate_join),
@@ -341,7 +341,7 @@ export default function PersonnelFormModal({ item, departments = [], onClose, on
       'birthday', 'gender', 'marital_status', 'private_code', 'private_code_date',
       'private_code_place', 'nationality', 'ethnicity', 'phone', 'mobile', 'email',
       'home_address', 'current_address', 'department_id', 'position_id', 'job_title_id',
-      'job_status', 'job_date_join', 'job_date_try', 'job_reldate_join',
+      'job_date_join', 'job_date_try', 'job_reldate_join',
       'job_date_out', 'job_out_reason', 'salary_method', 'description',
       'education_level', 'professional_level', 'training_school', 'work_history',
       'tax_code', 'social_insurance_number', 'labor_contract_number',
@@ -349,6 +349,14 @@ export default function PersonnelFormModal({ item, departments = [], onClose, on
     ]
     nullableFields.forEach(f => { if (payload[f] === '') payload[f] = null })
     payload.salary_real = payload.salary_real !== '' ? Number(payload.salary_real) : null
+
+    // Đồng bộ position text từ position_id để list hiện đúng
+    if (payload.position_id) {
+      const pos = positions.find(p => String(p.id) === String(payload.position_id))
+      if (pos) payload.position = pos.title
+    } else {
+      payload.position = null
+    }
 
     mutation.mutate(payload)
   }
@@ -466,14 +474,14 @@ export default function PersonnelFormModal({ item, departments = [], onClose, on
               <Row label="Dân tộc">
                 <input value={form.ethnicity} onChange={set('ethnicity')} placeholder="Kinh" style={inputStyle} />
               </Row>
-              {isEdit && (
-                <Row label="Trạng thái tài khoản">
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={form.is_active} onChange={set('is_active')} />
-                    Đang hoạt động
-                  </label>
-                </Row>
-              )}
+              <Row label="Trạng thái tài khoản">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={form.is_active} onChange={set('is_active')} />
+                  <span style={{ color: form.is_active ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
+                    {form.is_active ? '✓ Đang hoạt động' : '✗ Đã vô hiệu hóa'}
+                  </span>
+                </label>
+              </Row>
 
               {/* Học vấn */}
               <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #f1f5f9', paddingTop: 12, marginTop: 4 }}>
