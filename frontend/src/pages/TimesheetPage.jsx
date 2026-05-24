@@ -1,36 +1,28 @@
 /**
- * TimesheetPage v3 — Bảng chấm công kiểu Excel
- * Nhập giờ trực tiếp theo ngày · Nhiều dòng/người · Auto-save
- * Model: timesheet_rows (GET/POST bulk/DELETE /timesheet)
+ * TimesheetPage v4 — Giao diện Excel
+ * Ma trận: Nhân viên (hàng) × Ngày (cột) · Click ô để nhập · Phím mũi tên điều hướng
  */
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { timesheetApi, personnelApi, deptApi, attendanceApi } from '../services/api'
+import { timesheetApi, personnelApi, deptApi } from '../services/api'
 import { useAuthStore } from '../store/authStore'
 
-// ─── constants ───────────────────────────────────────────────────────────────
-
 const today = new Date()
-
-const DIENGIAI = ['Làm việc chuyên môn', 'Việc Chính', 'Việc Phụ']
-
-const DOW_SHORT = ['CN','T2','T3','T4','T5','T6','T7']
-
-// ─── helpers ─────────────────────────────────────────────────────────────────
+const DOW_SHORT = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
 
 function daysInMonth(y, m) { return new Date(y, m, 0).getDate() }
-function fmtYM(y, m) { return `${y}-${String(m).padStart(2,'0')}` }
 
-function calcRow(hours = {}, numDays) {
-  let total = 0, workDays = 0, ot = 0, otOver2 = 0
-  for (let d = 1; d <= numDays; d++) {
-    const h = parseFloat(hours[String(d)] || 0)
-    if (h > 0) { workDays++; total += h; const o = Math.max(0,h-8); ot+=o; if(o>2) otOver2++ }
-  }
-  return { total: +total.toFixed(1), workDays, ot: +ot.toFixed(1), otOver2 }
-}
+// Cột cố định (sticky left)
+const FCOLS = [
+  { key: 'stt',  label: 'STT',       w: 44,  left: 0   },
+  { key: 'name', label: 'Họ và tên', w: 160, left: 44  },
+  { key: 'code', label: 'Mã NV',     w: 72,  left: 204 },
+  { key: 'dept', label: 'Bộ phận',   w: 110, left: 276 },
+]
+const FIXED_W = 386
+const DAY_W   = 34
 
-// ─── main ────────────────────────────────────────────────────────────────────
+// ─── Main ────────────────────────────────────────────────────────────────────
 
 export default function TimesheetPage() {
   const qc = useQueryClient()
@@ -38,139 +30,139 @@ export default function TimesheetPage() {
 
   const canWrite  = hasPermission('Chấm công', 'nhập liệu')
   const canExport = hasPermission('Chấm công', 'xuất file')
-
-  // Phòng ban được phép: null = tất cả, [...ids] = giới hạn
   const allowedDepts = getAttendanceDepts()
   const deptLocked   = allowedDepts !== null && allowedDepts.length === 1
 
   const [year,   setYear]   = useState(today.getFullYear())
   const [month,  setMonth]  = useState(today.getMonth() + 1)
-  // Nếu user bị giới hạn 1 phòng ban → tự động filter
   const [deptId, setDeptId] = useState(deptLocked ? allowedDepts[0] : '')
   const [search, setSearch] = useState('')
-  const [selPid, setSelPid] = useState(null)
-  const [tab,    setTab]    = useState('input')   // input | report
+  const [tab,    setTab]    = useState('input')
+
   const [saving,     setSaving]     = useState(false)
-  const [saveStatus, setSaveStatus] = useState('idle') // idle | saving | saved
-  const [dirty,      setDirty]      = useState(false)  // có thay đổi chưa lưu
-  const [toast,      setToast]      = useState(null)   // thông báo nổi
+  const [saveStatus, setSaveStatus] = useState('idle')
+  const [dirty,      setDirty]      = useState(false)
+  const [toast,      setToast]      = useState(null)
+
+  // Ô đang chọn / đang chỉnh sửa
+  const [selCell,   setSelCell]   = useState(null) // {ri, day}
+  const [editCell,  setEditCell]  = useState(null) // {ri, day}
+  const [editVal,   setEditVal]   = useState('')
+  const [editLeave, setEditLeave] = useState(null) // {ri}
+  const [leaveVal,  setLeaveVal]  = useState('')
+
+  const containerRef = useRef(null)
+  const pendingRef   = useRef({})
+  const [drafts, setDrafts] = useState({})
 
   const numDays = daysInMonth(year, month)
   const days    = Array.from({ length: numDays }, (_, i) => i + 1)
 
-  // local drafts: { "pid:rowIdx": draft }
-  const [drafts,  setDrafts]  = useState({})
-  const [newRows, setNewRows] = useState({})  // { pid: [ ...pending new rows ] }
-  const pendingRef = useRef({})
-  const saveTimer  = useRef(null)
-
-  // ── Queries ────────────────────────────────────────────────────────────────
+  // ── Queries ──────────────────────────────────────────────────────────────
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['timesheet', year, month, deptId],
-    queryFn: () => timesheetApi.list({ year, month, ...(deptId ? { dept_id: deptId } : {}) })
-      .then(r => r.data),
+    queryFn:  () => timesheetApi.list({ year, month, ...(deptId ? { dept_id: deptId } : {}) })
+                      .then(r => r.data),
   })
 
   const { data: allPersonnel = [] } = useQuery({
     queryKey: ['personnel-all'],
-    queryFn: () => personnelApi.getAll().then(r => r.data),
+    queryFn:  () => personnelApi.getAll().then(r => r.data),
   })
 
   const { data: depts = [] } = useQuery({
     queryKey: ['departments'],
-    queryFn: () => deptApi.list().then(r => r.data),
+    queryFn:  () => deptApi.list().then(r => r.data),
   })
 
-  // group rows by personnel_id
-  const byPid = {}
-  for (const r of rows) {
-    const pid = String(r.personnel_id)
-    if (!byPid[pid]) byPid[pid] = []
-    byPid[pid].push(r)
-  }
-
-  // Lookup map: department_id → {name, code}
   const deptMap = Object.fromEntries(depts.map(d => [String(d.id), d]))
 
-  // Enrich allPersonnel với department_name (không có trong /personnel/all response)
-  const enrichedPersonnel = allPersonnel.map(p => ({
+  const enrichedP = allPersonnel.map(p => ({
     ...p,
     department_name: deptMap[String(p.department_id)]?.name || p.department_name || '',
   }))
 
-  const filteredP = enrichedPersonnel.filter(p => {
+  const filteredP = enrichedP.filter(p => {
     if (p.is_active === false) return false
     if (deptId && String(p.department_id) !== deptId) return false
-    if (search && !p.full_name?.toLowerCase().includes(search.toLowerCase()) &&
-        !p.employee_code?.toLowerCase().includes(search.toLowerCase())) return false
+    if (search) {
+      const s = search.toLowerCase()
+      if (!p.full_name?.toLowerCase().includes(s) &&
+          !p.employee_code?.toLowerCase().includes(s)) return false
+    }
     return true
   })
 
+  // DB rows grouped by pid
+  const byPid = {}
+  for (const r of rows) {
+    const pid = String(r.personnel_id)
+    ;(byPid[pid] = byPid[pid] || []).push(r)
+  }
+
+  // ── Reset khi đổi tháng/phòng ban ────────────────────────────────────────
+
   useEffect(() => {
-    if (filteredP.length > 0 && !filteredP.find(p => String(p.id) === selPid))
-      setSelPid(String(filteredP[0].id))
-  }, [filteredP.length])
+    setDrafts({})
+    pendingRef.current = {}
+    setDirty(false)
+    setSelCell(null)
+    setEditCell(null)
+    setEditLeave(null)
+  }, [year, month, deptId])
 
-  useEffect(() => { setDrafts({}); setNewRows({}); pendingRef.current = {} }, [year, month, deptId])
+  // ── Ctrl+S để lưu ────────────────────────────────────────────────────────
 
-  // ── Mutations ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    function onKey(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault()
+        flushSave()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, []) // eslint-disable-line
+
+  // ── Mutations ─────────────────────────────────────────────────────────────
 
   const saveMut = useMutation({
-    mutationFn: (payload) => timesheetApi.bulkSave(payload),
+    mutationFn: payload => timesheetApi.bulkSave(payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['timesheet', year, month, deptId] })
-      setNewRows({})
       setDirty(false)
       setSaveStatus('saved')
       showToast('✓ Đã lưu thành công!')
       setTimeout(() => setSaveStatus('idle'), 2500)
     },
-    onError: (err) => {
+    onError: err => {
       setSaveStatus('idle')
-      const status  = err?.response?.status
-      const detail  = err?.response?.data?.detail
-      const msg     = status ? `HTTP ${status}: ${detail || err.message}` : (err?.message || 'Network Error')
-      showToast('❌ ' + msg)
+      showToast('❌ ' + (err?.response?.data?.detail || err.message))
     },
   })
-
-  const delMut = useMutation({
-    mutationFn: (id) => timesheetApi.deleteRow(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['timesheet', year, month, deptId] }),
-  })
-
-  // ── Auto-save ──────────────────────────────────────────────────────────────
 
   function showToast(msg) {
     setToast(msg)
     setTimeout(() => setToast(null), 3000)
   }
 
-  // Không auto-save — chỉ đánh dấu dirty, chờ user bấm Lưu
-  const triggerSave = useCallback(() => {
-    setDirty(true)
-  }, [])
-
   async function flushSave() {
     const batch = pendingRef.current
-    if (!Object.keys(batch).length) {
-      showToast('Không có thay đổi mới để lưu')
-      return
-    }
-    // Clean payload — chỉ gửi các field mà backend cần
+    if (!Object.keys(batch).length) { showToast('Không có thay đổi để lưu'); return }
+
     const payload = Object.values(batch).map(row => ({
       id:               row.id || null,
       personnel_id:     String(row.personnel_id),
       year:             Number(row.year),
       month:            Number(row.month),
       row_index:        Number(row.row_index),
-      row_label:        row.row_label   || null,
+      row_label:        row.row_label || null,
       work_description: row.work_description || null,
       hours: Object.fromEntries(
         Object.entries(row.hours || {})
           .map(([k, v]) => [k, Number(v)])
-          .filter(([, v]) => !isNaN(v) && v > 0)
+          .filter(([, v]) => v > 0)
       ),
       leave_days: Number(row.leave_days) || 0,
       notes:      row.notes || null,
@@ -178,112 +170,236 @@ export default function TimesheetPage() {
 
     pendingRef.current = {}
     setSaving(true); setSaveStatus('saving')
-    try {
-      await saveMut.mutateAsync(payload)
-    } catch (err) {
-      // Khôi phục để user có thể retry
-      pendingRef.current = batch
-      setDirty(true)
-      console.error('[TimesheetSave] error:', err?.response?.status, err?.response?.data, err?.message)
-    } finally {
-      setSaving(false)
-    }
+    try   { await saveMut.mutateAsync(payload) }
+    catch { pendingRef.current = batch; setDirty(true) }
+    finally { setSaving(false) }
   }
 
-  // ── Get merged rows for a person ───────────────────────────────────────────
+  // ── Helpers dữ liệu ───────────────────────────────────────────────────────
 
-  function getMergedRows(pid, person) {
-    const dbRows = (byPid[pid] || []).slice().sort((a,b) => a.row_index - b.row_index)
-    const extra  = newRows[pid] || []
-    const allIdxs = new Set([
-      ...dbRows.map(r => r.row_index),
-      ...Object.keys(drafts).filter(k => k.startsWith(pid+':')).map(k => +k.split(':')[1]),
-    ])
-    const merged = [...allIdxs].sort((a,b)=>a-b).map(idx => {
-      const base = dbRows.find(r => r.row_index === idx) || {
-        id: null, personnel_id: pid, year, month, row_index: idx,
-        row_label: null, work_description: idx === 0 ? 'Làm việc chuyên môn' : 'Việc Phụ',
-        hours: {}, leave_days: 0, notes: null,
-        full_name: person?.full_name, employee_code: person?.employee_code,
-        position_text: person?.position, department_name: person?.department_name,
-      }
-      return drafts[`${pid}:${idx}`] ?? base
-    })
-    return merged.length ? merged : [{
+  function getMainRow(pid) {
+    return drafts[`${pid}:0`] ||
+           (byPid[pid] || []).find(r => r.row_index === 0) ||
+           null
+  }
+
+  // Tổng giờ ngày d (tất cả dòng, bao gồm draft)
+  function getTotalHours(pid, day) {
+    const dbPidRows = byPid[pid] || []
+    const seenIdxs  = new Set()
+    let total = 0
+
+    for (const r of dbPidRows) {
+      const row = drafts[`${pid}:${r.row_index}`] || r
+      seenIdxs.add(r.row_index)
+      total += parseFloat((row.hours || {})[String(day)] || 0) || 0
+    }
+    for (const [key, draft] of Object.entries(drafts)) {
+      if (!key.startsWith(pid + ':')) continue
+      const idx = +key.split(':')[1]
+      if (seenIdxs.has(idx)) continue
+      total += parseFloat((draft.hours || {})[String(day)] || 0) || 0
+    }
+    return +total.toFixed(1)
+  }
+
+  function patchMainRow(pid, patch) {
+    const mainDb = (byPid[pid] || []).find(r => r.row_index === 0)
+    const base   = drafts[`${pid}:0`] || mainDb || {
       id: null, personnel_id: pid, year, month, row_index: 0,
       row_label: null, work_description: 'Làm việc chuyên môn',
       hours: {}, leave_days: 0, notes: null,
-      full_name: person?.full_name, employee_code: person?.employee_code,
-      position_text: person?.position, department_name: person?.department_name,
-    }]
-  }
-
-  // ── Patch a row draft ──────────────────────────────────────────────────────
-
-  function patchRow(pid, rowIdx, patch) {
-    const key     = `${pid}:${rowIdx}`
-    const person  = filteredP.find(p => String(p.id) === pid)
-    const current = getMergedRows(pid, person).find(r => r.row_index === rowIdx)
-    const draft   = { ...(current || {}), ...patch }
+    }
+    const draft = { ...base, ...patch }
+    const key   = `${pid}:0`
     setDrafts(prev => ({ ...prev, [key]: draft }))
     pendingRef.current = { ...pendingRef.current, [key]: draft }
-    triggerSave()
+    setDirty(true)
   }
 
-  function patchHour(pid, rowIdx, day, value) {
-    const person  = filteredP.find(p => String(p.id) === pid)
-    const current = getMergedRows(pid, person).find(r => r.row_index === rowIdx)
-    const hours   = { ...(current?.hours || {}) }
+  function patchHour(pid, day, value) {
+    const main  = getMainRow(pid)
+    const hours = { ...(main?.hours || {}) }
     const v = parseFloat(value)
     if (isNaN(v) || v <= 0) delete hours[String(day)]
     else hours[String(day)] = v
-    patchRow(pid, rowIdx, { hours })
+    patchMainRow(pid, { hours })
   }
 
-  function addRow(pid) {
-    const person = filteredP.find(p => String(p.id) === pid)
-    const merged = getMergedRows(pid, person)
-    const nextIdx = merged.length
-    const newRow  = {
-      id: null, personnel_id: pid, year, month, row_index: nextIdx,
-      row_label: null, work_description: nextIdx === 0 ? 'Làm việc chuyên môn' : 'Việc Phụ',
-      hours: {}, leave_days: 0, notes: null,
-      full_name: person?.full_name, employee_code: person?.employee_code,
-      position_text: person?.position, department_name: person?.department_name,
-    }
-    const key = `${pid}:${nextIdx}`
-    setDrafts(prev => ({ ...prev, [key]: newRow }))
-    pendingRef.current = { ...pendingRef.current, [key]: newRow }
-    triggerSave()
-  }
+  // ── Tóm tắt tháng ────────────────────────────────────────────────────────
 
-  // ── Employee mini-summary ──────────────────────────────────────────────────
-
-  function empSummary(pid) {
-    const person  = filteredP.find(p => String(p.id) === pid)
-    const merged  = getMergedRows(pid, person)
+  function personSummary(pid) {
     const dayTotals = {}
-    for (const row of merged)
+    const dbPidRows = byPid[pid] || []
+    const seenIdxs  = new Set()
+
+    for (const r of dbPidRows) {
+      const row = drafts[`${pid}:${r.row_index}`] || r
+      seenIdxs.add(r.row_index)
       for (let d = 1; d <= numDays; d++) {
         const h = parseFloat((row.hours || {})[String(d)] || 0)
         if (h > 0) dayTotals[d] = (dayTotals[d] || 0) + h
       }
+    }
+    for (const [key, draft] of Object.entries(drafts)) {
+      if (!key.startsWith(pid + ':')) continue
+      const idx = +key.split(':')[1]
+      if (seenIdxs.has(idx)) continue
+      for (let d = 1; d <= numDays; d++) {
+        const h = parseFloat((draft.hours || {})[String(d)] || 0)
+        if (h > 0) dayTotals[d] = (dayTotals[d] || 0) + h
+      }
+    }
+
     const workDays = Object.keys(dayTotals).length
-    const totalH   = Object.values(dayTotals).reduce((s,h) => s+h, 0)
-    return { workDays, totalH: +totalH.toFixed(1) }
+    const totalH   = +Object.values(dayTotals).reduce((s, h) => s + h, 0).toFixed(1)
+    const otH      = +Object.values(dayTotals).map(h => Math.max(0, h - 8)).reduce((s, h) => s + h, 0).toFixed(1)
+    const main     = getMainRow(pid)
+    const leave    = parseFloat(main?.leave_days || 0)
+
+    return { workDays, totalH, otH, leave }
   }
 
-  const selPerson = filteredP.find(p => String(p.id) === selPid)
-  const selRows   = selPerson ? getMergedRows(String(selPerson.id), selPerson) : []
+  // ── Chỉnh sửa ô ──────────────────────────────────────────────────────────
 
-  // ── Export ─────────────────────────────────────────────────────────────────
+  function startEditHour(ri, day, initialVal) {
+    if (!canWrite) return
+    const pid = String(filteredP[ri]?.id)
+    if (!pid) return
+    const h = getTotalHours(pid, day)
+    setSelCell({ ri, day })
+    setEditCell({ ri, day })
+    setEditLeave(null)
+    setEditVal(initialVal !== undefined ? initialVal : (h > 0 ? String(h) : ''))
+  }
+
+  function commitHour(ri, day, val) {
+    const pid = String(filteredP[ri]?.id)
+    if (pid) patchHour(pid, day, val)
+    setEditCell(null)
+    setEditVal('')
+  }
+
+  function startEditLeave(ri) {
+    if (!canWrite) return
+    const pid  = String(filteredP[ri]?.id)
+    if (!pid) return
+    const main = getMainRow(pid)
+    const l    = parseFloat(main?.leave_days || 0)
+    setEditLeave({ ri })
+    setLeaveVal(l > 0 ? String(l) : '')
+    setEditCell(null)
+    setSelCell(null)
+  }
+
+  function commitLeave(ri, val) {
+    const pid = String(filteredP[ri]?.id)
+    if (pid) patchMainRow(pid, { leave_days: parseFloat(val) || 0 })
+    setEditLeave(null)
+    setLeaveVal('')
+  }
+
+  // ── Điều hướng phím ──────────────────────────────────────────────────────
+
+  function handleGridKeyDown(e) {
+    if (editCell || editLeave) return
+    if (!selCell) return
+    const { ri, day } = selCell
+    const n = filteredP.length
+
+    switch (e.key) {
+      case 'ArrowRight': e.preventDefault(); setSelCell({ ri, day: Math.min(day + 1, numDays) }); break
+      case 'ArrowLeft':  e.preventDefault(); setSelCell({ ri, day: Math.max(day - 1, 1) });       break
+      case 'ArrowDown':  e.preventDefault(); setSelCell({ ri: Math.min(ri + 1, n - 1), day });    break
+      case 'ArrowUp':    e.preventDefault(); setSelCell({ ri: Math.max(ri - 1, 0), day });        break
+      case 'Tab':
+        e.preventDefault()
+        if (e.shiftKey) setSelCell({ ri, day: Math.max(day - 1, 1) })
+        else            setSelCell({ ri, day: Math.min(day + 1, numDays) })
+        break
+      case 'Enter': case 'F2':
+        e.preventDefault()
+        startEditHour(ri, day)
+        break
+      case 'Delete': case 'Backspace':
+        e.preventDefault()
+        { const pid = String(filteredP[ri]?.id); if (pid) patchHour(pid, day, '') }
+        break
+      default:
+        if (/^[0-9.]$/.test(e.key)) startEditHour(ri, day, e.key)
+    }
+  }
+
+  // ── Check đủ ngày thường ─────────────────────────────────────────────────
+
+  function fillAllWeekdays() {
+    const newDrafts  = { ...drafts }
+    const newPending = { ...pendingRef.current }
+
+    for (const p of filteredP) {
+      const pid  = String(p.id)
+      const main = getMainRow(pid)
+      const base = main || {
+        id: null, personnel_id: pid, year, month, row_index: 0,
+        row_label: null, work_description: 'Làm việc chuyên môn',
+        hours: {}, leave_days: 0, notes: null,
+      }
+      const hours = { ...(base.hours || {}) }
+      for (let d = 1; d <= numDays; d++) {
+        const dow = new Date(year, month - 1, d).getDay()
+        if (dow !== 0 && dow !== 6) hours[String(d)] = 8
+      }
+      const draft = { ...base, hours }
+      const key   = `${pid}:0`
+      newDrafts[key]  = draft
+      newPending[key] = draft
+    }
+    setDrafts(newDrafts)
+    pendingRef.current = newPending
+    setDirty(true)
+    showToast(`⚡ Đã check ${filteredP.length} nhân viên`)
+  }
+
+  // ── Xóa tất cả ngày nghỉ (cuối tuần) ────────────────────────────────────
+
+  function clearWeekends() {
+    const newDrafts  = { ...drafts }
+    const newPending = { ...pendingRef.current }
+
+    for (const p of filteredP) {
+      const pid  = String(p.id)
+      const main = getMainRow(pid)
+      if (!main) continue
+      const hours = { ...(main.hours || {}) }
+      let changed = false
+      for (let d = 1; d <= numDays; d++) {
+        const dow = new Date(year, month - 1, d).getDay()
+        if ((dow === 0 || dow === 6) && hours[String(d)]) {
+          delete hours[String(d)]
+          changed = true
+        }
+      }
+      if (!changed) continue
+      const draft = { ...main, hours }
+      const key   = `${pid}:0`
+      newDrafts[key]  = draft
+      newPending[key] = draft
+    }
+    setDrafts(newDrafts)
+    pendingRef.current = newPending
+    setDirty(true)
+  }
+
+  // ── Export ────────────────────────────────────────────────────────────────
 
   async function handleExport() {
     const res = await timesheetApi.export({ year, month, ...(deptId ? { dept_id: deptId } : {}) })
     const url = URL.createObjectURL(new Blob([res.data]))
-    const a = document.createElement('a')
-    a.href = url; a.download = `cham_cong_T${String(month).padStart(2,'0')}_${year}.xlsx`
-    a.click(); URL.revokeObjectURL(url)
+    const a   = document.createElement('a')
+    a.href = url
+    a.download = `cham_cong_T${String(month).padStart(2, '0')}_${year}.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -291,29 +407,28 @@ export default function TimesheetPage() {
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'100vh', background:'#f1f5f9' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f1f5f9' }}>
 
-      {/* Top bar */}
+      {/* ── Top bar ────────────────────────────────────────────────────────── */}
       <div style={{
-        display:'flex', alignItems:'center', gap:8, padding:'8px 16px', flexWrap:'wrap',
-        background:'white', borderBottom:'1px solid #e2e8f0', flexShrink:0,
+        display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', flexWrap: 'wrap',
+        background: 'white', borderBottom: '1px solid #e2e8f0', flexShrink: 0,
       }}>
-        <span style={{ fontWeight:800, fontSize:17, color:'#1a2744' }}>🗓️ Chấm công</span>
+        <span style={{ fontWeight: 800, fontSize: 17, color: '#1a2744' }}>🗓️ Chấm công</span>
 
         <select style={SEL} value={month} onChange={e => setMonth(+e.target.value)}>
-          {Array.from({length:12},(_,i)=>i+1).map(m =>
+          {Array.from({ length: 12 }, (_, i) => i + 1).map(m =>
             <option key={m} value={m}>Tháng {m}</option>
           )}
         </select>
         <select style={SEL} value={year} onChange={e => setYear(+e.target.value)}>
-          {[year-1,year,year+1].map(y => <option key={y} value={y}>{y}</option>)}
+          {[year - 1, year, year + 1].map(y => <option key={y} value={y}>{y}</option>)}
         </select>
         <select
           style={{ ...SEL, background: deptLocked ? '#f8fafc' : 'white' }}
           value={deptId}
           onChange={e => !deptLocked && setDeptId(e.target.value)}
           disabled={deptLocked}
-          title={deptLocked ? 'Tài khoản của bạn chỉ xem phòng ban được phân công' : ''}
         >
           {!deptLocked && <option value="">Tất cả phòng ban</option>}
           {depts
@@ -322,544 +437,458 @@ export default function TimesheetPage() {
           }
         </select>
 
+        <input
+          placeholder="🔍 Tìm nhân viên..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ ...SEL, width: 170 }}
+        />
+
         {/* Tabs */}
-        <div style={{ display:'flex', gap:2, marginLeft:4 }}>
-          {[{k:'input',l:'📋 Nhập liệu'},{k:'report',l:'📊 Báo cáo'}].map(t => (
+        <div style={{ display: 'flex', gap: 2, marginLeft: 4 }}>
+          {[{ k: 'input', l: '📋 Nhập liệu' }, { k: 'report', l: '📊 Báo cáo' }].map(t => (
             <button key={t.k} onClick={async () => {
-              // Auto-save trước khi xem báo cáo
-              if (t.k === 'report' && Object.keys(pendingRef.current).length > 0) {
-                await flushSave()
-              }
+              if (t.k === 'report' && Object.keys(pendingRef.current).length > 0) await flushSave()
               setTab(t.k)
             }} style={{
-              padding:'5px 12px', borderRadius:7, border:'none', cursor:'pointer',
-              fontSize:12, fontWeight:600,
-              position:'relative',
-              background: tab===t.k ? '#1a2744' : '#f1f5f9',
-              color:      tab===t.k ? 'white'   : '#475569',
+              padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer',
+              fontSize: 12, fontWeight: 600, position: 'relative',
+              background: tab === t.k ? '#1a2744' : '#f1f5f9',
+              color:      tab === t.k ? 'white'   : '#475569',
             }}>
               {t.l}
               {t.k === 'report' && dirty && (
                 <span style={{
-                  position:'absolute', top:2, right:2,
-                  width:7, height:7, borderRadius:'50%',
-                  background:'#f59e0b', border:'1.5px solid white',
-                }}/>
+                  position: 'absolute', top: 2, right: 2, width: 7, height: 7,
+                  borderRadius: '50%', background: '#f59e0b', border: '1.5px solid white',
+                }} />
               )}
             </button>
           ))}
         </div>
 
-        {saving && <span style={{ fontSize:11, color:'#64748b' }}>Đang lưu...</span>}
-        <div style={{ flex:1 }} />
+        <div style={{ flex: 1 }} />
+
+        {canWrite && (
+          <button onClick={fillAllWeekdays}
+            style={{ ...BTN, background: '#fffbeb', color: '#92400e', border: '1px solid #fde68a' }}>
+            ⚡ Check đủ ngày thường
+          </button>
+        )}
+
+        {canWrite && (
+          <button onClick={flushSave} disabled={saving} style={{
+            ...BTN, fontWeight: 700,
+            background: saving        ? '#94a3b8'
+                      : saveStatus === 'saved' ? '#16a34a'
+                      : dirty        ? '#f59e0b'
+                      : '#e2e8f0',
+            color: (saving || saveStatus === 'saved' || dirty) ? 'white' : '#94a3b8',
+          }}>
+            {saving               ? '⏳ Đang lưu...'
+              : saveStatus === 'saved' ? '✓ Đã lưu'
+              : dirty              ? '💾 Lưu (có thay đổi)'
+              : '💾 Lưu'}
+          </button>
+        )}
+
         {canExport && (
-          <button onClick={handleExport} style={{ ...BTN, background:'#1a2744', color:'white' }}>
+          <button onClick={handleExport} style={{ ...BTN, background: '#1a2744', color: 'white' }}>
             ⬇ Xuất Excel
           </button>
         )}
       </div>
 
-      {/* Body */}
-      <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
-
-        {/* Left: employee list */}
-        {tab === 'input' && (
-          <div style={{
-            width:220, flexShrink:0, background:'white', borderRight:'1px solid #e2e8f0',
-            display:'flex', flexDirection:'column', overflow:'hidden',
+      {/* ── Excel Grid ─────────────────────────────────────────────────────── */}
+      {tab === 'input' && (
+        <div
+          ref={containerRef}
+          tabIndex={0}
+          onKeyDown={handleGridKeyDown}
+          style={{ flex: 1, overflow: 'auto', outline: 'none', position: 'relative' }}
+        >
+          <table style={{
+            borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed',
+            minWidth: FIXED_W + numDays * DAY_W + 220,
+            userSelect: 'none',
           }}>
-            <div style={{ padding:'10px 10px 4px' }}>
-              <input
-                placeholder="🔍 Tìm nhân viên..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                style={{
-                  width:'100%', padding:'6px 10px', borderRadius:8,
-                  border:'1px solid #dde1e7', fontSize:12, boxSizing:'border-box', outline:'none',
-                }}
-              />
-            </div>
-            <div style={{ padding:'2px 10px 6px', fontSize:11, color:'#94a3b8' }}>
-              {filteredP.length} nhân viên
-            </div>
-            <div style={{ flex:1, overflowY:'auto' }}>
-              {filteredP.map(p => {
-                const pid  = String(p.id)
-                const act  = pid === selPid
-                const summ = empSummary(pid)
-                return (
-                  <div key={pid} onClick={() => setSelPid(pid)} style={{
-                    padding:'8px 12px', cursor:'pointer', borderBottom:'1px solid #f1f5f9',
-                    background: act ? '#eff6ff' : 'white',
-                    borderLeft: act ? '3px solid #3b82f6' : '3px solid transparent',
+            <colgroup>
+              {FCOLS.map(c => <col key={c.key} style={{ width: c.w }} />)}
+              {days.map(d => <col key={d} style={{ width: DAY_W }} />)}
+              <col style={{ width: 50 }} />{/* Ngày công */}
+              <col style={{ width: 58 }} />{/* Tổng giờ */}
+              <col style={{ width: 50 }} />{/* TC */}
+              <col style={{ width: 58 }} />{/* NP */}
+            </colgroup>
+
+            {/* ── Header ─────────────────────────────────────────────────── */}
+            <thead>
+              <tr>
+                {FCOLS.map((c, i) => (
+                  <th key={c.key} style={{
+                    ...TH,
+                    position: 'sticky', top: 0, left: c.left,
+                    zIndex: i <= 1 ? 6 : 5,
+                    width: c.w,
+                    textAlign: c.key === 'name' ? 'left' : 'center',
+                    paddingLeft: c.key === 'name' ? 8 : 4,
+                    borderRight: c.key === 'dept'
+                      ? '2px solid rgba(255,255,255,.4)'
+                      : '1px solid rgba(255,255,255,.12)',
                   }}>
-                    <div style={{ fontWeight: act ? 700 : 500, fontSize:12.5, color:'#1e293b' }}>
-                      {p.full_name}
-                    </div>
-                    {/* Mã nhân viên */}
-                    {p.employee_code && (
-                      <div style={{ fontSize:10, color:'#94a3b8' }}>{p.employee_code}</div>
-                    )}
-                    {/* Phòng ban + chức vụ */}
-                    {(p.department_name || p.position) && (
-                      <div style={{ fontSize:10, color:'#64748b', marginTop:1,
-                                    overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                        {[p.position, p.department_name].filter(Boolean).join(' · ')}
+                    {c.label}
+                  </th>
+                ))}
+
+                {days.map(d => {
+                  const dow  = new Date(year, month - 1, d).getDay()
+                  const isW  = dow === 0 || dow === 6
+                  const isTo = d === today.getDate() && month === today.getMonth() + 1 && year === today.getFullYear()
+                  return (
+                    <th key={d} style={{
+                      ...TH,
+                      position: 'sticky', top: 0, zIndex: 3,
+                      width: DAY_W, padding: '3px 1px',
+                      background: isTo ? '#dc2626' : isW ? '#2d4a8a' : '#1a2744',
+                    }}>
+                      <div style={{ fontSize: 11, fontWeight: 700 }}>{d}</div>
+                      <div style={{ fontSize: 8, opacity: .65 }}>{DOW_SHORT[dow]}</div>
+                    </th>
+                  )
+                })}
+
+                {['Ngày\ncông', 'Tổng\ngiờ', 'TC\n(h)', 'Nghỉ\nphép'].map(h => (
+                  <th key={h} style={{
+                    ...TH, position: 'sticky', top: 0, zIndex: 3,
+                    background: '#2d3f6b', fontSize: 10, whiteSpace: 'pre-line', lineHeight: 1.3,
+                  }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+
+            {/* ── Body ────────────────────────────────────────────────────── */}
+            <tbody>
+              {isLoading && (
+                <tr>
+                  <td colSpan={FCOLS.length + numDays + 4}
+                    style={{ textAlign: 'center', padding: 28, color: '#94a3b8', fontSize: 14 }}>
+                    Đang tải dữ liệu...
+                  </td>
+                </tr>
+              )}
+
+              {filteredP.map((p, ri) => {
+                const pid    = String(p.id)
+                const rowBg  = ri % 2 === 0 ? 'white' : '#f8fafc'
+                const { workDays, totalH, otH, leave } = personSummary(pid)
+
+                return (
+                  <tr key={pid}>
+                    {/* STT */}
+                    <td style={{
+                      ...TD, position: 'sticky', left: 0, background: rowBg, zIndex: 2,
+                      textAlign: 'center', fontWeight: 600, color: '#94a3b8', fontSize: 11,
+                    }}>
+                      {ri + 1}
+                    </td>
+
+                    {/* Họ tên */}
+                    <td style={{
+                      ...TD, position: 'sticky', left: 44, background: rowBg, zIndex: 2,
+                      paddingLeft: 8,
+                    }}>
+                      <div style={{
+                        fontSize: 12.5, fontWeight: 700, color: '#1e293b',
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 148,
+                      }}>
+                        {p.full_name}
                       </div>
-                    )}
-                    <div style={{ display:'flex', gap:4, marginTop:3 }}>
-                      {summ.workDays > 0 && <Chip c="#2563eb" bg="#dbeafe">{summ.workDays}N</Chip>}
-                      {summ.totalH  > 0 && <Chip c="#059669" bg="#d1fae5">{summ.totalH}h</Chip>}
-                    </div>
-                  </div>
+                      {p.position && (
+                        <div style={{
+                          fontSize: 9.5, color: '#94a3b8',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 148,
+                        }}>
+                          {p.position}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* Mã NV */}
+                    <td style={{
+                      ...TD, position: 'sticky', left: 204, background: rowBg, zIndex: 2,
+                      textAlign: 'center', fontSize: 11, color: '#64748b',
+                    }}>
+                      {p.employee_code || '—'}
+                    </td>
+
+                    {/* Bộ phận */}
+                    <td style={{
+                      ...TD, position: 'sticky', left: 276, background: rowBg, zIndex: 2,
+                      fontSize: 10, color: '#64748b', borderRight: '2px solid #e2e8f0',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {p.department_name || '—'}
+                    </td>
+
+                    {/* Ô ngày */}
+                    {days.map(day => {
+                      const h      = getTotalHours(pid, day)
+                      const dow    = new Date(year, month - 1, day).getDay()
+                      const isWknd = dow === 0 || dow === 6
+                      const isSel  = selCell?.ri === ri && selCell?.day === day
+                      const isEdit = editCell?.ri === ri && editCell?.day === day
+                      const isOt   = h > 8
+
+                      let cellBg = isWknd ? '#fef9ee' : rowBg
+                      if (h > 0 && !isSel) cellBg = isOt ? '#dcfce7' : isWknd ? '#fef3c7' : '#f0fdf4'
+                      if (isSel && !isEdit) cellBg = '#dbeafe'
+
+                      return (
+                        <td
+                          key={day}
+                          onClick={() => startEditHour(ri, day)}
+                          style={{
+                            ...TD,
+                            width: DAY_W, padding: 0, textAlign: 'center',
+                            background: cellBg,
+                            outline: isSel ? '2px solid #2563eb' : 'none',
+                            outlineOffset: '-1px',
+                            cursor: canWrite ? 'cell' : 'default',
+                          }}
+                        >
+                          {isEdit ? (
+                            <input
+                              autoFocus
+                              type="number" min={0} max={24} step={0.5}
+                              value={editVal}
+                              onChange={e => setEditVal(e.target.value)}
+                              onBlur={() => commitHour(ri, day, editVal)}
+                              onKeyDown={e => {
+                                e.stopPropagation()
+                                if (e.key === 'Escape') { setEditCell(null); setEditVal(''); return }
+                                if (e.key === 'Enter') {
+                                  commitHour(ri, day, editVal)
+                                  const nri = Math.min(ri + 1, filteredP.length - 1)
+                                  startEditHour(nri, day)
+                                  return
+                                }
+                                if (e.key === 'Tab') {
+                                  e.preventDefault()
+                                  commitHour(ri, day, editVal)
+                                  const nd = e.shiftKey
+                                    ? Math.max(day - 1, 1)
+                                    : Math.min(day + 1, numDays)
+                                  startEditHour(ri, nd)
+                                  return
+                                }
+                                if (e.key === 'ArrowDown') {
+                                  commitHour(ri, day, editVal)
+                                  startEditHour(Math.min(ri + 1, filteredP.length - 1), day)
+                                  return
+                                }
+                                if (e.key === 'ArrowUp') {
+                                  commitHour(ri, day, editVal)
+                                  startEditHour(Math.max(ri - 1, 0), day)
+                                  return
+                                }
+                                if (e.key === 'ArrowRight') {
+                                  commitHour(ri, day, editVal)
+                                  startEditHour(ri, Math.min(day + 1, numDays))
+                                  return
+                                }
+                                if (e.key === 'ArrowLeft') {
+                                  commitHour(ri, day, editVal)
+                                  startEditHour(ri, Math.max(day - 1, 1))
+                                }
+                              }}
+                              style={{
+                                width: '100%', height: 28, border: 'none',
+                                background: 'white', textAlign: 'center',
+                                fontSize: 13, fontWeight: 700, outline: 'none', padding: 0,
+                                color: isOt ? '#16a34a' : isWknd ? '#d97706' : '#1e293b',
+                              }}
+                            />
+                          ) : (
+                            <div style={{
+                              height: 28, lineHeight: '28px', fontSize: 12,
+                              fontWeight: h > 0 ? 700 : 300,
+                              color: h > 0
+                                ? (isOt ? '#16a34a' : isWknd ? '#b45309' : '#1e293b')
+                                : isWknd ? '#fbbf24' : '#e5e7eb',
+                            }}>
+                              {h > 0 ? h : isWknd ? '—' : ''}
+                            </div>
+                          )}
+                        </td>
+                      )
+                    })}
+
+                    {/* Tóm tắt */}
+                    <td style={{
+                      ...TD, textAlign: 'center', fontWeight: 700,
+                      background: '#eef2ff', color: '#4338ca',
+                      borderLeft: '2px solid #c7d2fe', fontSize: 13,
+                    }}>
+                      {workDays || ''}
+                    </td>
+                    <td style={{
+                      ...TD, textAlign: 'center', fontWeight: 700,
+                      background: '#eef2ff', color: totalH > 0 ? '#15803d' : '#94a3b8', fontSize: 13,
+                    }}>
+                      {totalH || ''}
+                    </td>
+                    <td style={{
+                      ...TD, textAlign: 'center', fontWeight: 700,
+                      background: '#eef2ff', color: otH > 0 ? '#d97706' : '#94a3b8', fontSize: 13,
+                    }}>
+                      {otH || ''}
+                    </td>
+                    {/* Nghỉ phép — editable */}
+                    <td
+                      onClick={() => startEditLeave(ri)}
+                      style={{
+                        ...TD, textAlign: 'center', fontWeight: 700,
+                        background: '#fffbeb', color: '#92400e', fontSize: 13,
+                        cursor: canWrite ? 'cell' : 'default',
+                      }}
+                    >
+                      {editLeave?.ri === ri ? (
+                        <input
+                          autoFocus
+                          type="number" min={0} step={0.5}
+                          value={leaveVal}
+                          onChange={e => setLeaveVal(e.target.value)}
+                          onBlur={() => commitLeave(ri, leaveVal)}
+                          onKeyDown={e => {
+                            e.stopPropagation()
+                            if (e.key === 'Enter' || e.key === 'Escape') commitLeave(ri, leaveVal)
+                          }}
+                          style={{
+                            width: '100%', height: 28, border: 'none',
+                            background: '#fffbeb', textAlign: 'center',
+                            fontSize: 12, fontWeight: 700, outline: 'none', color: '#92400e',
+                          }}
+                        />
+                      ) : (
+                        leave || ''
+                      )}
+                    </td>
+                  </tr>
                 )
               })}
-            </div>
-          </div>
-        )}
+            </tbody>
 
-        {/* Right */}
-        <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
-          {tab === 'input' && (
-            selPerson
-              ? <InputGrid
-                  person={selPerson}
-                  rows={selRows}
-                  days={days}
-                  numDays={numDays}
-                  year={year}
-                  month={month}
-                  patchHour={patchHour}
-                  patchRow={patchRow}
-                  addRow={addRow}
-                  delMut={delMut}
-                  setDrafts={setDrafts}
-                  saving={saving}
-                  saveStatus={saveStatus}
-                  dirty={dirty}
-                  flushSave={flushSave}
-                  readOnly={!canWrite}
-                />
-              : <Empty text="Chọn nhân viên để nhập chấm công" />
-          )}
-          {tab === 'report' && (
-            <ReportTab
-              rows={rows}
-              personnel={filteredP}
-              depts={depts}
-              days={days}
-              numDays={numDays}
-              year={year}
-              month={month}
-              isLoading={isLoading}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* Toast notification */}
-      {toast && (
-        <div style={{
-          position:'fixed', bottom:28, left:'50%', transform:'translateX(-50%)',
-          background: toast.startsWith('✓') ? '#16a34a' : toast.startsWith('❌') ? '#dc2626' : '#1a2744',
-          color:'white', padding:'11px 28px', borderRadius:12, zIndex:9999,
-          fontSize:14, fontWeight:700, boxShadow:'0 6px 24px rgba(0,0,0,.3)',
-          pointerEvents:'none', whiteSpace:'nowrap',
-        }}>{toast}</div>
-      )}
-    </div>
-  )
-}
-
-// ─── InputGrid (vertical: rows=days, cols=work-types) ────────────────────────
-
-function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchRow, addRow, delMut, setDrafts, saving, saveStatus, dirty, flushSave, readOnly }) {
-  const pid = String(person.id)
-  const [editCol, setEditCol] = useState(null)
-
-  // ── Sessions (S=sáng 4h, C=chiều 4h) persisted in localStorage ───────────
-  const sessKey = `ts_sess_${pid}_${year}_${month}`
-  const [sessions, setSessions] = useState({})
-
-  useEffect(() => {
-    const stored = localStorage.getItem(sessKey)
-    if (stored) { try { setSessions(JSON.parse(stored)); return } catch {} }
-    // Init from existing hours
-    const init = {}
-    for (let d = 1; d <= numDays; d++) {
-      const tot = rows.reduce((s,r) => s + parseFloat((r.hours||{})[String(d)]||0), 0)
-      if (tot >= 8) init[d] = {s:true,c:true}
-      else if (tot > 0) init[d] = {s:true,c:false}
-    }
-    setSessions(init)
-  }, [sessKey])
-
-  useEffect(() => {
-    if (Object.keys(sessions).length) localStorage.setItem(sessKey, JSON.stringify(sessions))
-  }, [sessions, sessKey])
-
-  const sessAvail = d => { const s=sessions[d]||{}; return (s.s?4:0)+(s.c?4:0) }
-
-  function toggleSession(day, field) {
-    const curr = sessions[day]||{s:false,c:false}
-    const sess = {...curr, [field]: !curr[field]}
-    setSessions(p => ({...p, [day]: sess}))
-    const avail = (sess.s?4:0)+(sess.c?4:0)
-    const subTotal = rows.filter(r=>r.row_index>0).reduce((s,r)=>s+parseFloat((r.hours||{})[String(day)]||0),0)
-    const main = Math.max(0, avail - subTotal)
-    patchHour(pid, 0, day, main > 0 ? String(main) : '')
-    // dirty flag set by triggerSave inside patchHour
-  }
-
-  function handleSubChange(subIdx, day, value) {
-    patchHour(pid, subIdx, day, value)
-    const avail = sessAvail(day)
-    if (!avail) return
-    const newSub = parseFloat(value)||0
-    const otherSub = rows.filter(r=>r.row_index>0&&r.row_index!==subIdx)
-                         .reduce((s,r)=>s+parseFloat((r.hours||{})[String(day)]||0),0)
-    const main = Math.max(0, avail - otherSub - newSub)
-    patchHour(pid, 0, day, main > 0 ? String(main) : '')
-  }
-
-  function fillWeekdays() {
-    const newSess = {...sessions}
-    const mRow = rows.find(r=>r.row_index===0)
-    const newH  = {...(mRow?.hours||{})}
-    for (let d = 1; d <= numDays; d++) {
-      const dow = new Date(year,month-1,d).getDay()
-      if (dow===0||dow===6) continue
-      newSess[d] = {s:true,c:true}
-      const sub = rows.filter(r=>r.row_index>0).reduce((s,r)=>s+parseFloat((r.hours||{})[String(d)]||0),0)
-      const h = Math.max(0, 8-sub)
-      if (h > 0) newH[String(d)] = h; else delete newH[String(d)]
-    }
-    setSessions(newSess)
-    if (mRow) patchRow(pid, 0, {...mRow, hours: newH})
-  }
-
-  // ── Summaries ─────────────────────────────────────────────────────────────
-  const dayTotals = {}
-  for (const row of rows) for (let d=1;d<=numDays;d++) {
-    const h = parseFloat((row.hours||{})[String(d)]||0)
-    if (h>0) dayTotals[d] = (dayTotals[d]||0)+h
-  }
-  const totalH   = +Object.values(dayTotals).reduce((s,h)=>s+h,0).toFixed(1)
-  const workDays = Object.values(dayTotals).filter(h=>h>0).length
-  const otH      = +Object.values(dayTotals).map(h=>Math.max(0,h-8)).reduce((s,h)=>s+h,0).toFixed(1)
-
-  const mainRow = rows.find(r=>r.row_index===0)||null
-  const subRows = rows.filter(r=>r.row_index>0)
-
-  // Per-day notes stored as JSON in mainRow.notes  e.g. {"1":"ghi chú","3":"..."}
-  const dayNotes = (() => {
-    try { const p = JSON.parse(mainRow?.notes||'{}'); return typeof p==='object' ? p : {} }
-    catch { return {} }
-  })()
-
-  function setDayNote(day, note) {
-    const next = { ...dayNotes }
-    if (note?.trim()) next[String(day)] = note.trim()
-    else delete next[String(day)]
-    const base = mainRow || {
-      id:null, personnel_id:pid, year, month, row_index:0,
-      row_label:null, work_description:'Làm việc chuyên môn',
-      hours:{}, leave_days:0, notes:null,
-    }
-    patchRow(pid, 0, { ...base, notes: Object.keys(next).length ? JSON.stringify(next) : null })
-  }
-
-  return (
-    <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
-
-      {/* Person header */}
-      <div style={{
-        padding:'10px 18px', background:'#1a2744', color:'white',
-        display:'flex', alignItems:'center', gap:14, flexShrink:0, flexWrap:'wrap',
-      }}>
-        <div>
-          <div style={{ fontWeight:800, fontSize:15 }}>{person.full_name}</div>
-          <div style={{ fontSize:11, color:'#93c5fd', marginTop:2 }}>
-            {[person.employee_code, person.position, person.department_name].filter(Boolean).join(' · ')}
-          </div>
-        </div>
-        <div style={{ flex:1 }} />
-        <button onClick={fillWeekdays} style={{
-          padding:'5px 12px', borderRadius:8, border:'none', cursor:'pointer',
-          background:'rgba(251,191,36,.2)', color:'#fbbf24', fontSize:12, fontWeight:700,
-        }}>⚡ Check đủ ngày thường</button>
-
-        {readOnly && (
-          <span style={{ fontSize:11, color:'#f59e0b', fontWeight:600, padding:'4px 10px',
-                         borderRadius:7, background:'rgba(245,158,11,.15)' }}>
-            👁 Chỉ xem
-          </span>
-        )}
-
-        {/* Save button */}
-        {!readOnly && (
-          <button
-            onClick={flushSave}
-            disabled={saving}
-            style={{
-              padding:'7px 18px', borderRadius:9, border:'none',
-              cursor: saving ? 'wait' : 'pointer', fontWeight:700, fontSize:13,
-              display:'flex', alignItems:'center', gap:6, transition:'all .2s',
-              background: saving              ? 'rgba(255,255,255,.1)'
-                         : saveStatus==='saved' ? '#16a34a'
-                         : dirty               ? '#f59e0b'
-                         : 'rgba(255,255,255,.15)',
-              color: 'white',
-              boxShadow: dirty && !saving ? '0 0 0 2px #fbbf24' : 'none',
-            }}
-          >
-            <span style={{ fontSize:15 }}>
-              {saving ? '⏳' : saveStatus==='saved' ? '✓' : dirty ? '●' : '💾'}
-            </span>
-            {saving ? 'Đang lưu...' : saveStatus==='saved' ? 'Đã lưu' : dirty ? 'Lưu (có thay đổi)' : 'Lưu'}
-          </button>
-        )}
-
-        <SChip label="Ngày công" val={workDays} unit="ngày" c="#60a5fa" />
-        <SChip label="Tổng giờ"  val={totalH}   unit="giờ"  c="#34d399" />
-        <SChip label="Tăng ca"   val={otH}       unit="giờ"  c="#fbbf24" />
-      </div>
-
-      {/* Table */}
-      <div style={{ flex:1, overflow:'auto' }}>
-        <table style={{ borderCollapse:'collapse', fontSize:13, tableLayout:'fixed', minWidth:'100%' }}>
-          <colgroup>
-            <col style={{width:44}}/>{/* Ngày */}
-            <col style={{width:38}}/>{/* Thứ */}
-            <col style={{width:36}}/>{/* S */}
-            <col style={{width:36}}/>{/* C */}
-            <col style={{width:82}}/>{/* Việc Chính auto */}
-            {subRows.map(r=><col key={r.row_index} style={{width:84}}/>)}
-            <col style={{width:28}}/>{/* + */}
-            <col style={{width:58}}/>{/* Total */}
-            <col style={{width:160}}/>{/* Ghi chú ngày */}
-          </colgroup>
-
-          <thead>
-            <tr>
-              <th style={{...VTH,position:'sticky',left:0,zIndex:4}}>Ngày</th>
-              <th style={{...VTH,position:'sticky',left:44,zIndex:4,borderRight:'2px solid rgba(255,255,255,.2)'}}>Thứ</th>
-              <th style={{...VTH,background:'#1d4ed8',fontSize:11,letterSpacing:.3,paddingBottom:2}}>
-                S<div style={{fontSize:8,opacity:.6,fontWeight:400}}>4h</div>
-              </th>
-              <th style={{...VTH,background:'#1d4ed8',fontSize:11,letterSpacing:.3,paddingBottom:2,borderRight:'2px solid rgba(255,255,255,.25)'}}>
-                C<div style={{fontSize:8,opacity:.6,fontWeight:400}}>4h</div>
-              </th>
-
-              {/* Việc Chính — auto, read-only */}
-              <th style={{...VTH,background:'#065f46',padding:'7px 6px',verticalAlign:'middle'}}>
-                <div style={{fontWeight:700,fontSize:11}}>{mainRow?.work_description||'Việc Chính'}</div>
-                {mainRow?.row_label && <div style={{fontSize:9,color:'#6ee7b7',marginTop:2}}>{mainRow.row_label}</div>}
-                <div style={{fontSize:8,color:'rgba(255,255,255,.4)',marginTop:3}}>= S+C − Phụ</div>
-              </th>
-
-              {/* Việc Phụ columns */}
-              {subRows.map(row => (
-                <th key={row.row_index} style={{...VTH,padding:'6px 8px',verticalAlign:'top'}}>
-                  {editCol===`d${row.row_index}` ? (
-                    <input autoFocus list={`dg-${pid}-${row.row_index}`}
-                      value={row.work_description||''}
-                      onChange={e=>patchRow(pid,row.row_index,{...row,work_description:e.target.value})}
-                      onBlur={()=>setEditCol(null)} onKeyDown={e=>e.key==='Enter'&&setEditCol(null)}
-                      style={{width:'100%',background:'rgba(255,255,255,.15)',border:'none',color:'white',
-                              textAlign:'center',fontSize:11,outline:'none',borderRadius:4,padding:'2px 4px',fontWeight:700}}/>
-                  ) : (
-                    <div onClick={()=>setEditCol(`d${row.row_index}`)} title="Nhấn để đổi tên"
-                      style={{fontWeight:700,fontSize:11,cursor:'pointer',borderBottom:'1px dashed rgba(255,255,255,.3)',paddingBottom:2}}>
-                      {row.work_description||'Việc Phụ'}
-                    </div>
-                  )}
-                  <datalist id={`dg-${pid}-${row.row_index}`}>{DIENGIAI.map(d=><option key={d} value={d}/>)}</datalist>
-                  {editCol===`l${row.row_index}` ? (
-                    <input autoFocus value={row.row_label||''} placeholder="Máy / vị trí..."
-                      onChange={e=>patchRow(pid,row.row_index,{...row,row_label:e.target.value||null})}
-                      onBlur={()=>setEditCol(null)} onKeyDown={e=>e.key==='Enter'&&setEditCol(null)}
-                      style={{width:'100%',background:'rgba(255,255,255,.1)',border:'none',color:'#93c5fd',
-                              textAlign:'center',fontSize:9,outline:'none',borderRadius:4,padding:'1px 4px',marginTop:3}}/>
-                  ) : (
-                    <div onClick={()=>setEditCol(`l${row.row_index}`)}
-                      style={{fontSize:9,color:row.row_label?'#93c5fd':'rgba(255,255,255,.3)',cursor:'pointer',marginTop:3,minHeight:12}}>
-                      {row.row_label||'+ máy/vị trí'}
-                    </div>
-                  )}
-                  {row.id && (
-                    <div style={{marginTop:4}}>
-                      <button onClick={()=>{if(!window.confirm('Xoá cột này?'))return;delMut.mutate(row.id);setDrafts(p=>{const n={...p};delete n[`${pid}:${row.row_index}`];return n})}}
-                        style={{...HBTN('#f87171','rgba(248,113,113,.15)'),fontSize:9,padding:'2px 6px'}}>🗑 Xoá</button>
-                    </div>
-                  )}
-                </th>
-              ))}
-
-              <th style={{...VTH,background:'#374151',cursor:'pointer',fontSize:18,fontWeight:300}}
-                  onClick={()=>addRow(pid)} title="Thêm Việc Phụ">+</th>
-              <th style={{...VTH,background:'#2d3f6b',borderLeft:'2px solid rgba(255,255,255,.2)'}}>
-                Tổng<br/><span style={{fontSize:8,opacity:.6}}>giờ</span>
-              </th>
-              <th style={{...VTH,background:'#374151',textAlign:'left',paddingLeft:8}}>
-                Ghi chú ngày
-              </th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {days.map(d => {
-              const dow    = new Date(year,month-1,d).getDay()
-              const isWknd = dow===0||dow===6
-              const sess   = sessions[d]||{s:false,c:false}
-              const avail  = (sess.s?4:0)+(sess.c?4:0)
-              const mainH  = parseFloat((mainRow?.hours||{})[String(d)]||0)
-              const subTot = subRows.reduce((s,r)=>s+parseFloat((r.hours||{})[String(d)]||0),0)
-              const dayTot = mainH+subTot
-              const isOt   = dayTot > 8
-              const active = avail > 0
-              const rowBg  = isWknd ? '#fffbeb' : active ? 'white' : '#f9fafb'
-
-              return (
-                <tr key={d} style={{background:rowBg}}>
-                  {/* Ngày */}
-                  <td style={{...VTD,position:'sticky',left:0,background:rowBg,zIndex:1,
-                    textAlign:'center',fontWeight:700,fontSize:14,
-                    color:isWknd?'#d97706':active?'#1e293b':'#c9d0d8'}}>
-                    {d}
+            {/* ── Footer tổng cộng ──────────────────────────────────────── */}
+            {filteredP.length > 0 && !isLoading && (
+              <tfoot>
+                <tr style={{ background: '#e8ecf4' }}>
+                  <td colSpan={FCOLS.length} style={{
+                    ...TD, textAlign: 'right', paddingRight: 10,
+                    fontWeight: 700, fontSize: 11, color: '#1a2744',
+                    position: 'sticky', left: 0, background: '#e8ecf4', zIndex: 2,
+                  }}>
+                    Tổng cộng
                   </td>
-                  {/* Thứ */}
-                  <td style={{...VTD,position:'sticky',left:44,background:rowBg,zIndex:1,
-                    textAlign:'center',fontSize:11,color:isWknd?'#d97706':'#94a3b8',
-                    borderRight:'2px solid #e2e8f0'}}>
-                    {DOW_SHORT[dow]}
-                  </td>
-                  {/* S button */}
-                  <td style={{...VTD,textAlign:'center',padding:'3px 3px'}}>
-                    <button onClick={()=>!readOnly&&toggleSession(d,'s')} title={readOnly?'Chỉ xem':'Sáng (4h)'}
-                      style={{width:28,height:28,borderRadius:7,border:'none', cursor:readOnly?'default':'pointer', opacity:readOnly?.6:1,
-                        background: sess.s ? (isWknd?'#d97706':'#2563eb') : '#f1f5f9',
-                        color: sess.s?'white':'#94a3b8',
-                        fontSize:11,fontWeight:700,transition:'all .12s',
-                        boxShadow: sess.s ? (isWknd?'0 2px 6px #d9780655':'0 2px 6px #2563eb55') : 'none',
-                      }}>S</button>
-                  </td>
-                  {/* C button */}
-                  <td style={{...VTD,textAlign:'center',padding:'3px 3px',borderRight:'2px solid #e2e8f0'}}>
-                    <button onClick={()=>!readOnly&&toggleSession(d,'c')} title={readOnly?'Chỉ xem':'Chiều (4h)'}
-                      style={{width:28,height:28,borderRadius:7,border:'none', cursor:readOnly?'default':'pointer', opacity:readOnly?.6:1,
-                        background: sess.c ? (isWknd?'#d97706':'#2563eb') : '#f1f5f9',
-                        color: sess.c?'white':'#94a3b8',
-                        fontSize:11,fontWeight:700,transition:'all .12s',
-                        boxShadow: sess.c ? (isWknd?'0 2px 6px #d9780655':'0 2px 6px #2563eb55') : 'none',
-                      }}>C</button>
-                  </td>
-
-                  {/* Việc Chính (computed, read-only) */}
-                  <td style={{...VTD,textAlign:'center',padding:'2px 4px',
-                    background:mainH>0?'#ecfdf5':active?'#f0fdf4':rowBg,
-                    borderRight:'1px solid #d1fae5'}}>
-                    <div style={{
-                      fontSize:16,fontWeight:mainH>0?700:400,padding:'3px 0',
-                      color:mainH>0?'#059669':active?'#a7f3d0':'transparent',
-                      userSelect:'none',
-                    }}>
-                      {mainH > 0 ? mainH : active ? '–' : ''}
-                    </div>
-                  </td>
-
-                  {/* Sub cols (editable) */}
-                  {subRows.map(row => {
-                    const h = parseFloat((row.hours||{})[String(d)]||0)
+                  {days.map(day => {
+                    const dow   = new Date(year, month - 1, day).getDay()
+                    const isW   = dow === 0 || dow === 6
+                    const total = filteredP.reduce((s, p) => s + getTotalHours(String(p.id), day), 0)
                     return (
-                      <td key={row.row_index} style={{...VTD,padding:'3px 5px',textAlign:'center',background:rowBg}}>
-                        <input type="number" min={0} max={24} step={0.5}
-                          value={h>0?h:''}
-                          onChange={e=>!readOnly&&handleSubChange(row.row_index,d,e.target.value)}
-                          disabled={!active||readOnly}
-                          placeholder={active&&!readOnly?'–':''}
-                          style={{width:'100%',border:'1px solid transparent',background:'transparent',
-                            textAlign:'center',fontSize:15,outline:'none',borderRadius:6,
-                            color:h>0?'#7c3aed':'#d1d5db',fontWeight:h>0?600:400,padding:'3px 0',
-                            opacity:active?1:.25,cursor:active?'text':'not-allowed'}}
-                          onFocus={e=>{e.target.style.borderColor='#a78bfa';e.target.style.background='white'}}
-                          onBlur={e=>{e.target.style.borderColor='transparent';e.target.style.background='transparent'}}
-                        />
+                      <td key={day} style={{
+                        ...TD, textAlign: 'center', fontWeight: 700, fontSize: 11,
+                        background: isW ? '#fef9ee' : '#e8ecf4',
+                        color: total > 0 ? '#1a2744' : '#d1d5db',
+                      }}>
+                        {total > 0 ? +total.toFixed(1) : ''}
                       </td>
                     )
                   })}
-
-                  <td style={{...VTD,background:rowBg}}/>
-
-                  {/* Day total */}
-                  <td style={{...VTD,textAlign:'center',borderLeft:'2px solid #e2e8f0',
-                    background:isOt?'#dcfce7':active?'#f8fafc':rowBg,
-                    fontWeight:dayTot>0?700:400,fontSize:14,
-                    color:isOt?'#16a34a':dayTot>0?'#1e293b':'#e2e8f0'}}>
-                    {dayTot>0 ? +dayTot.toFixed(1) : '–'}
-                  </td>
-                  {/* Per-day note */}
-                  <td style={{...VTD, padding:'2px 6px', background: dayNotes[String(d)] ? '#fffbeb' : rowBg}}>
-                    <input
-                      value={dayNotes[String(d)]||''}
-                      onChange={e => setDayNote(d, e.target.value)}
-                      placeholder="Ghi chú..."
-                      style={{
-                        width:'100%', border:'none', background:'transparent',
-                        fontSize:11, outline:'none', color:'#475569',
-                        overflow:'hidden', textOverflow:'ellipsis',
-                      }}
-                      onFocus={e => e.target.style.background='white'}
-                      onBlur={e  => e.target.style.background='transparent'}
-                    />
-                  </td>
+                  {/* Summary totals */}
+                  {(() => {
+                    const allSumm = filteredP.map(p => personSummary(String(p.id)))
+                    return (
+                      <>
+                        <td style={{ ...TD, textAlign: 'center', fontWeight: 700, background: '#d4d9f0', color: '#4338ca', borderLeft: '2px solid #c7d2fe' }}>
+                          {allSumm.reduce((s, x) => s + x.workDays, 0) || ''}
+                        </td>
+                        <td style={{ ...TD, textAlign: 'center', fontWeight: 700, background: '#d4d9f0', color: '#15803d' }}>
+                          {+allSumm.reduce((s, x) => s + x.totalH, 0).toFixed(1) || ''}
+                        </td>
+                        <td style={{ ...TD, textAlign: 'center', fontWeight: 700, background: '#d4d9f0', color: '#d97706' }}>
+                          {+allSumm.reduce((s, x) => s + x.otH, 0).toFixed(1) || ''}
+                        </td>
+                        <td style={{ ...TD, textAlign: 'center', fontWeight: 700, background: '#fef3c7', color: '#92400e' }}>
+                          {+allSumm.reduce((s, x) => s + x.leave, 0).toFixed(1) || ''}
+                        </td>
+                      </>
+                    )
+                  })()}
                 </tr>
-              )
-            })}
-          </tbody>
+              </tfoot>
+            )}
+          </table>
 
-          <tfoot>
-            <tr style={{background:'#e8ecf4'}}>
-              <td colSpan={4} style={FTLBL}>Tổng tháng</td>
-              <td style={FTVAL('#059669')}>{calcRow(mainRow?.hours||{},numDays).total||'–'}</td>
-              {subRows.map(row=>{const{total}=calcRow(row.hours||{},numDays);return <td key={row.row_index} style={FTVAL('#7c3aed')}>{total||'–'}</td>})}
-              <td style={VTD}/><td style={{...FTVAL('#16a34a'),borderLeft:'2px solid #e2e8f0'}}>{totalH||'–'}</td>
-              <td style={VTD}/>
-            </tr>
-            <tr style={{background:'#f1f5f9'}}>
-              <td colSpan={4} style={FTLBL}>Ngày công</td>
-              <td style={FTVAL('#2563eb')}>{calcRow(mainRow?.hours||{},numDays).workDays||'–'}</td>
-              {subRows.map(row=><td key={row.row_index} style={VTD}/>)}
-              <td style={VTD}/><td style={{...FTVAL('#2563eb'),borderLeft:'2px solid #e2e8f0'}}>{workDays||'–'}</td>
-              <td style={VTD}/>
-            </tr>
-            <tr style={{background:'#f1f5f9'}}>
-              <td colSpan={4} style={FTLBL}>Tăng ca (h)</td>
-              <td style={VTD}/>
-              {subRows.map(row=><td key={row.row_index} style={VTD}/>)}
-              <td style={VTD}/><td style={{...FTVAL(otH>0?'#d97706':'#94a3b8'),borderLeft:'2px solid #e2e8f0'}}>{otH||'–'}</td>
-              <td style={VTD}/>
-            </tr>
-            <tr style={{background:'#fffbeb'}}>
-              <td colSpan={4} style={{...FTLBL,color:'#92400e'}}>Nghỉ phép</td>
-              <td style={{...VTD,padding:'3px 5px'}}>
-                <input type="number" min={0} step={0.5}
-                  value={parseFloat(mainRow?.leave_days||0)>0?mainRow.leave_days:''}
-                  onChange={e=>mainRow&&patchRow(pid,0,{...mainRow,leave_days:parseFloat(e.target.value)||0})}
-                  placeholder="0"
-                  style={{width:'100%',border:'1px solid #fde68a',background:'#fffbeb',textAlign:'center',
-                    fontSize:13,outline:'none',borderRadius:5,padding:'3px 0',fontWeight:700,color:'#92400e'}}/>
-              </td>
-              {subRows.map(row=><td key={row.row_index} style={VTD}/>)}
-              <td colSpan={3} style={VTD}/>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+          {!isLoading && filteredP.length === 0 && (
+            <div style={{
+              position: 'absolute', inset: 0, display: 'flex',
+              alignItems: 'center', justifyContent: 'center',
+              color: '#94a3b8', pointerEvents: 'none',
+            }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>👥</div>
+                <div style={{ fontWeight: 600 }}>Không tìm thấy nhân viên</div>
+                <div style={{ fontSize: 12, marginTop: 4 }}>Thử thay đổi bộ lọc hoặc tìm kiếm</div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
-      <div style={{padding:'5px 14px',fontSize:10,color:'#94a3b8',background:'white',borderTop:'1px solid #f1f5f9',flexShrink:0}}>
-        S = Sáng (4h) · C = Chiều (4h) · Việc Chính tự tính = (S+C) − Phụ · 💾 Lưu hoặc tự lưu sau 0.8s · Click tên cột để đổi
-      </div>
+      {/* ── Báo cáo ────────────────────────────────────────────────────────── */}
+      {tab === 'report' && (
+        <ReportTab
+          rows={rows}
+          personnel={filteredP}
+          depts={depts}
+          days={days}
+          numDays={numDays}
+          year={year}
+          month={month}
+          isLoading={isLoading}
+        />
+      )}
+
+      {/* ── Thanh trạng thái ───────────────────────────────────────────────── */}
+      {tab === 'input' && (
+        <div style={{
+          padding: '4px 16px', fontSize: 10.5, color: '#94a3b8', background: 'white',
+          borderTop: '1px solid #f1f5f9', flexShrink: 0,
+          display: 'flex', gap: 16, alignItems: 'center',
+        }}>
+          <span style={{ color: '#475569', fontWeight: 600 }}>{filteredP.length} nhân viên</span>
+          <span>Click ô để nhập · Enter = xuống · Tab = sang phải · Mũi tên = di chuyển · Delete = xoá · Ctrl+S = lưu</span>
+          {dirty && (
+            <span style={{ color: '#f59e0b', fontWeight: 700, marginLeft: 'auto' }}>
+              ● Có thay đổi chưa lưu
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)',
+          background: toast.startsWith('✓') ? '#16a34a' : toast.startsWith('❌') ? '#dc2626' : '#1a2744',
+          color: 'white', padding: '11px 28px', borderRadius: 12, zIndex: 9999,
+          fontSize: 14, fontWeight: 700, boxShadow: '0 6px 24px rgba(0,0,0,.3)',
+          pointerEvents: 'none', whiteSpace: 'nowrap',
+        }}>
+          {toast}
+        </div>
+      )}
     </div>
   )
 }
@@ -867,15 +896,16 @@ function InputGrid({ person, rows, days, numDays, year, month, patchHour, patchR
 // ─── ReportTab ────────────────────────────────────────────────────────────────
 
 function ReportTab({ rows, personnel, depts, days, numDays, year, month, isLoading }) {
-  if (isLoading) return <Empty text="Đang tải..." />
+  if (isLoading) return (
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+      Đang tải...
+    </div>
+  )
 
-  // Dept lookup: id → name
   const deptMap = Object.fromEntries((depts || []).map(d => [String(d.id), d.name]))
 
-  // ── Build pidDayMap & pidSummary từ rows ────────────────────────────────
-  const pidDayMap  = {}
-  const pidSummary = {}
-  // Đồng thời thu thập thông tin nhân viên từ rows (có JOIN đầy đủ)
+  const pidDayMap      = {}
+  const pidSummary     = {}
   const pidInfoFromRows = {}
 
   for (const r of rows) {
@@ -884,84 +914,79 @@ function ReportTab({ rows, personnel, depts, days, numDays, year, month, isLoadi
     if (!pidInfoFromRows[pid]) {
       pidInfoFromRows[pid] = {
         id:              r.personnel_id,
-        full_name:       r.full_name       || '',
-        employee_code:   r.employee_code   || '',
+        full_name:       r.full_name || '',
+        employee_code:   r.employee_code || '',
         department_name: r.department_name || deptMap[String(r.department_id)] || '',
-        position:        r.position_text   || '',
+        position:        r.position_text || '',
         department_id:   r.department_id,
       }
     }
     for (let d = 1; d <= numDays; d++) {
-      const h = parseFloat((r.hours||{})[String(d)]||0)
-      if (h > 0) pidDayMap[pid][d] = (pidDayMap[pid][d]||0) + h
+      const h = parseFloat((r.hours || {})[String(d)] || 0)
+      if (h > 0) pidDayMap[pid][d] = (pidDayMap[pid][d] || 0) + h
     }
     if (r.row_index === 0) {
       pidSummary[pid] = pidSummary[pid] || { leave: 0 }
-      pidSummary[pid].leave += parseFloat(r.leave_days||0)
+      pidSummary[pid].leave += parseFloat(r.leave_days || 0)
     }
   }
 
-  // ── Merge danh sách nhân viên ────────────────────────────────────────────
-  // Ưu tiên: nhân viên có data (từ rows) + nhân viên không có data (từ filteredP)
-  const seenPids   = new Set(Object.keys(pidInfoFromRows))
-  const allFromP   = (personnel || []).map(p => ({
+  const seenPids    = new Set(Object.keys(pidInfoFromRows))
+  const allFromP    = (personnel || []).map(p => ({
     id:              p.id,
-    full_name:       p.full_name       || '',
-    employee_code:   p.employee_code   || '',
+    full_name:       p.full_name || '',
+    employee_code:   p.employee_code || '',
     department_name: deptMap[String(p.department_id)] || p.department_name || '',
-    position:        p.position        || '',
+    position:        p.position || '',
     department_id:   p.department_id,
   }))
-  // Nhân viên có data hiện trước, sau đó nhân viên không có data
-  const withData    = Object.values(pidInfoFromRows)
-    .sort((a,b) => a.full_name.localeCompare(b.full_name, 'vi'))
+
+  const withData    = Object.values(pidInfoFromRows).sort((a, b) => a.full_name.localeCompare(b.full_name, 'vi'))
   const withoutData = allFromP.filter(p => !seenPids.has(String(p.id)))
   const displayList = [...withData, ...withoutData]
 
   if (!displayList.length) return (
-    <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
-      <div style={{ textAlign:'center', color:'#94a3b8' }}>
-        <div style={{ fontSize:32, marginBottom:8 }}>📋</div>
-        <div style={{ fontWeight:600 }}>Chưa có dữ liệu chấm công tháng này</div>
-        <div style={{ fontSize:12, marginTop:4 }}>Nhập liệu ở tab "Nhập liệu" và nhấn 💾 Lưu trước khi xem báo cáo</div>
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center', color: '#94a3b8' }}>
+        <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
+        <div style={{ fontWeight: 600 }}>Chưa có dữ liệu chấm công tháng này</div>
+        <div style={{ fontSize: 12, marginTop: 4 }}>Nhập liệu ở tab "Nhập liệu" và nhấn 💾 Lưu trước khi xem báo cáo</div>
       </div>
     </div>
   )
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{
-        padding:'8px 16px', background:'white', borderBottom:'1px solid #e2e8f0',
-        fontSize:13, fontWeight:700, color:'#1a2744', flexShrink:0,
+        padding: '8px 16px', background: 'white', borderBottom: '1px solid #e2e8f0',
+        fontSize: 13, fontWeight: 700, color: '#1a2744', flexShrink: 0,
       }}>
         Báo cáo tháng {month}/{year} — {withData.length} nhân viên có dữ liệu
         {withoutData.length > 0 && (
-          <span style={{ fontWeight:400, color:'#94a3b8', marginLeft:8, fontSize:12 }}>
+          <span style={{ fontWeight: 400, color: '#94a3b8', marginLeft: 8, fontSize: 12 }}>
             + {withoutData.length} chưa có
           </span>
         )}
       </div>
-      <div style={{ flex:1, overflow:'auto' }}>
-        <table style={{ borderCollapse:'collapse', fontSize:11, minWidth:'100%' }}>
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', fontSize: 11, minWidth: '100%' }}>
           <thead>
             <tr>
-              <th style={{ ...TH, width:32, position:'sticky', left:0, zIndex:4 }}>STT</th>
-              <th style={{ ...TH, width:150, position:'sticky', left:32, zIndex:4,
-                            textAlign:'left', paddingLeft:8 }}>Họ và tên</th>
-              <th style={{ ...TH, width:90, position:'sticky', left:182, zIndex:4 }}>Bộ phận</th>
+              <th style={{ ...TH, width: 32, position: 'sticky', left: 0, zIndex: 4 }}>STT</th>
+              <th style={{ ...TH, width: 150, position: 'sticky', left: 32, zIndex: 4, textAlign: 'left', paddingLeft: 8 }}>Họ và tên</th>
+              <th style={{ ...TH, width: 90, position: 'sticky', left: 182, zIndex: 4 }}>Bộ phận</th>
               {days.map(d => {
-                const dow = new Date(year,month-1,d).getDay()
-                const isW = dow===0||dow===6
+                const dow = new Date(year, month - 1, d).getDay()
+                const isW = dow === 0 || dow === 6
                 return (
-                  <th key={d} style={{ ...TH, width:30, padding:'4px 1px',
-                                       background: isW ? '#2d4a8a' : '#1a2744' }}>
-                    <div style={{ fontSize:10 }}>{d}</div>
-                    <div style={{ fontSize:8, opacity:.7 }}>{DOW_SHORT[dow]}</div>
+                  <th key={d} style={{ ...TH, width: 30, padding: '4px 1px', background: isW ? '#2d4a8a' : '#1a2744' }}>
+                    <div style={{ fontSize: 10 }}>{d}</div>
+                    <div style={{ fontSize: 8, opacity: .7 }}>{DOW_SHORT[dow]}</div>
                   </th>
                 )
               })}
-              {['Ngày','Tổng h','TC (h)','NP'].map(h => (
-                <th key={h} style={{ ...TH, width:54, background:'#2d3f6b' }}>{h}</th>
+              {['Ngày', 'Tổng h', 'TC (h)', 'NP'].map(h => (
+                <th key={h} style={{ ...TH, width: 54, background: '#2d3f6b' }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -970,50 +995,41 @@ function ReportTab({ rows, personnel, depts, days, numDays, year, month, isLoadi
               const pid     = String(p.id)
               const dmap    = pidDayMap[pid] || {}
               const hasData = Object.keys(dmap).length > 0
-              const bg      = gi%2===1 ? '#f8fafc' : 'white'
-
-              const totalH   = +Object.values(dmap).reduce((s,h)=>s+h,0).toFixed(1)
+              const bg      = gi % 2 === 1 ? '#f8fafc' : 'white'
+              const totalH  = +Object.values(dmap).reduce((s, h) => s + h, 0).toFixed(1)
               const workDays = Object.keys(dmap).length
-              const otH      = +Object.values(dmap).map(h=>Math.max(0,h-8)).reduce((s,h)=>s+h,0).toFixed(1)
-              const leave    = pidSummary[pid]?.leave || 0
+              const otH     = +Object.values(dmap).map(h => Math.max(0, h - 8)).reduce((s, h) => s + h, 0).toFixed(1)
+              const leave   = pidSummary[pid]?.leave || 0
 
               return (
                 <tr key={pid} style={{ background: bg, opacity: hasData ? 1 : 0.45 }}>
-                  <td style={{ ...TD, textAlign:'center', fontWeight:700, color:'#64748b',
-                                position:'sticky', left:0, background:bg }}>{gi+1}</td>
-                  <td style={{ ...TD, position:'sticky', left:32, background:bg,
-                                fontWeight: hasData ? 700 : 400, paddingLeft:8, whiteSpace:'nowrap' }}>
+                  <td style={{ ...TD, textAlign: 'center', fontWeight: 700, color: '#64748b', position: 'sticky', left: 0, background: bg }}>{gi + 1}</td>
+                  <td style={{ ...TD, position: 'sticky', left: 32, background: bg, fontWeight: hasData ? 700 : 400, paddingLeft: 8, whiteSpace: 'nowrap' }}>
                     {p.full_name}
-                    {p.employee_code && (
-                      <div style={{ fontSize:9, color:'#94a3b8', fontWeight:400 }}>{p.employee_code}</div>
-                    )}
+                    {p.employee_code && <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 400 }}>{p.employee_code}</div>}
                   </td>
-                  <td style={{ ...TD, position:'sticky', left:182, background:bg,
-                                fontSize:10, color:'#64748b', maxWidth:90, overflow:'hidden',
-                                textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  <td style={{ ...TD, position: 'sticky', left: 182, background: bg, fontSize: 10, color: '#64748b', maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {p.department_name}
                   </td>
                   {days.map(d => {
                     const h   = dmap[d]
-                    const dow = new Date(year,month-1,d).getDay()
-                    const isW = dow===0||dow===6
+                    const dow = new Date(year, month - 1, d).getDay()
+                    const isW = dow === 0 || dow === 6
                     return (
                       <td key={d} style={{
-                        ...TD, textAlign:'center', width:30,
+                        ...TD, textAlign: 'center', width: 30,
                         background: h > 8 ? '#dcfce7' : isW ? '#fffbeb' : bg,
                         color: h > 8 ? '#16a34a' : '#1e293b',
-                        fontWeight: h > 8 ? 700 : 400, fontSize:10,
+                        fontWeight: h > 8 ? 700 : 400, fontSize: 10,
                       }}>
                         {h || ''}
                       </td>
                     )
                   })}
-                  <td style={{ ...TD, textAlign:'center', background:'#e8ecf4', fontWeight:700 }}>{workDays||''}</td>
-                  <td style={{ ...TD, textAlign:'center', background:'#e8ecf4', fontWeight:700,
-                                color: totalH > 0 ? '#16a34a' : '#1e293b' }}>{totalH||''}</td>
-                  <td style={{ ...TD, textAlign:'center', background:'#e8ecf4', fontWeight:700,
-                                color: otH > 0 ? '#d97706' : '#1e293b' }}>{otH||''}</td>
-                  <td style={{ ...TD, textAlign:'center', background:'#e8ecf4', fontWeight:700 }}>{leave||''}</td>
+                  <td style={{ ...TD, textAlign: 'center', background: '#e8ecf4', fontWeight: 700 }}>{workDays || ''}</td>
+                  <td style={{ ...TD, textAlign: 'center', background: '#e8ecf4', fontWeight: 700, color: totalH > 0 ? '#16a34a' : '#1e293b' }}>{totalH || ''}</td>
+                  <td style={{ ...TD, textAlign: 'center', background: '#e8ecf4', fontWeight: 700, color: otH > 0 ? '#d97706' : '#1e293b' }}>{otH || ''}</td>
+                  <td style={{ ...TD, textAlign: 'center', background: '#e8ecf4', fontWeight: 700 }}>{leave || ''}</td>
                 </tr>
               )
             })}
@@ -1024,94 +1040,25 @@ function ReportTab({ rows, personnel, depts, days, numDays, year, month, isLoadi
   )
 }
 
-// ─── Micro ────────────────────────────────────────────────────────────────────
-
-function Empty({ text }) {
-  return (
-    <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'#94a3b8' }}>
-      {text}
-    </div>
-  )
-}
-
-function Chip({ c, bg, children }) {
-  return (
-    <span style={{ display:'inline-block', padding:'1px 5px', borderRadius:4,
-                   fontSize:10, fontWeight:700, color:c, background:bg }}>
-      {children}
-    </span>
-  )
-}
-
-function SChip({ label, val, unit, c }) {
-  return (
-    <div style={{ textAlign:'center', minWidth:50 }}>
-      <div style={{ fontSize:15, fontWeight:800, color:c }}>{val||0}</div>
-      <div style={{ fontSize:9, color:'rgba(255,255,255,0.55)', lineHeight:1.2 }}>{label}<br/>{unit}</div>
-    </div>
-  )
-}
-
-function ICOBTN(color) {
-  return {
-    width:20, height:20, borderRadius:'50%', border:`1.5px solid ${color}20`,
-    background:'white', cursor:'pointer', fontSize:13, color,
-    display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1,
-  }
-}
-
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const SEL = {
-  padding:'6px 10px', borderRadius:8, border:'1px solid #dde1e7',
-  fontSize:12, background:'white', outline:'none',
+  padding: '6px 10px', borderRadius: 8, border: '1px solid #dde1e7',
+  fontSize: 12, background: 'white', outline: 'none',
 }
 
 const BTN = {
-  padding:'7px 14px', borderRadius:8, border:'none', cursor:'pointer',
-  fontSize:12, fontWeight:600,
+  padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+  fontSize: 12, fontWeight: 600,
 }
 
 const TH = {
-  background:'#1a2744', color:'white', padding:'6px 4px', textAlign:'center',
-  borderRight:'1px solid rgba(255,255,255,0.12)', whiteSpace:'nowrap',
-  position:'sticky', top:0, zIndex:2, fontSize:11,
+  background: '#1a2744', color: 'white', padding: '6px 4px', textAlign: 'center',
+  borderRight: '1px solid rgba(255,255,255,0.12)', whiteSpace: 'nowrap',
+  position: 'sticky', top: 0, zIndex: 2, fontSize: 11,
 }
 
 const TD = {
-  padding:'3px 4px', borderBottom:'1px solid #eef0f3', borderRight:'1px solid #eef0f3',
-  verticalAlign:'middle',
-}
-
-const SUM = {
-  ...TD,
-  background:'#e8ecf4', textAlign:'center', fontWeight:700, color:'#1a2744',
-}
-
-// vertical-layout table styles
-const VTH = {
-  background:'#1a2744', color:'white', padding:'8px 6px', textAlign:'center',
-  borderRight:'1px solid rgba(255,255,255,.12)', whiteSpace:'nowrap',
-  position:'sticky', top:0, zIndex:2, fontSize:11,
-}
-
-const VTD = {
-  padding:'2px 4px', borderBottom:'1px solid #f0f0f0', borderRight:'1px solid #f0f0f0',
-  verticalAlign:'middle',
-}
-
-const FTLBL = {
-  ...VTD, textAlign:'right', paddingRight:10, fontSize:11, fontWeight:700,
-  color:'#1a2744', background:'inherit',
-}
-
-function FTVAL(color) {
-  return { ...VTD, textAlign:'center', fontWeight:700, fontSize:13, color }
-}
-
-function HBTN(color, bg) {
-  return {
-    fontSize:9, padding:'2px 5px', background: bg, border:'none',
-    color, borderRadius:4, cursor:'pointer', fontWeight:600,
-  }
+  padding: '2px 4px', borderBottom: '1px solid #eef0f3', borderRight: '1px solid #eef0f3',
+  verticalAlign: 'middle', height: 28,
 }
