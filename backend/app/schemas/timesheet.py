@@ -37,5 +37,7 @@ class TimesheetRowOut(BaseModel):
     employee_code: Optional[str] = None
     position_text: Optional[str] = None
     department_name: Optional[str] = None
+    mobile: Optional[str] = None
+    phone: Optional[str] = None
 
     model_config = {"from_attributes": True}
